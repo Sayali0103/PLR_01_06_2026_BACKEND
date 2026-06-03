@@ -57,6 +57,7 @@ function getTransporter() {
     host: SMTP_HOST,
     port,
     secure: SMTP_SECURE ? SMTP_SECURE === 'true' : port === 465,
+    family: 4,
     auth: {
       user: SMTP_USER,
       pass: SMTP_APP_PASSWORD,
