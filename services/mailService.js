@@ -1,5 +1,3 @@
-import nodemailer from 'nodemailer'
-
 const brand = {
   orange: '#ff9501',
   ink: '#1a1208',
@@ -36,37 +34,41 @@ function formatDateTime(date) {
 }
 
 function messageId(record, category) {
-  return `<${category}-${record._id || Date.now()}@plrobotics.com>`
-}
-
-function getTransporter() {
-  const {
-    SMTP_HOST,
-    SMTP_PORT,
-    SMTP_SECURE,
-    SMTP_USER,
-    SMTP_APP_PASSWORD,
-  } = process.env
-
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_APP_PASSWORD) {
-    return null
-  }
-
-  const port = Number(SMTP_PORT || 465)
-  return nodemailer.createTransport({
-    host: SMTP_HOST,
-    port,
-    secure: SMTP_SECURE ? SMTP_SECURE === 'true' : port === 465,
-    family: 4,
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_APP_PASSWORD,
-    },
-  })
+  return `<${category}-${record._id || Date.now()}@plrobotics.in>`
 }
 
 function fromAddress(name) {
-  return `"${name}" <${process.env.SMTP_USER}>`
+  const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@plrobotics.in'
+  return `${name} <${fromEmail}>`
+}
+
+async function sendEmail({ fromName, to, replyTo, subject, html, text, messageId: emailMessageId }) {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) return { skipped: true }
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: fromAddress(fromName),
+      to,
+      reply_to: replyTo,
+      subject,
+      html,
+      text,
+      headers: emailMessageId ? { 'Message-ID': emailMessageId } : undefined,
+    }),
+  })
+
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(data.message || data.error || `Resend API error ${response.status}`)
+  }
+
+  return { skipped: false, id: data.id }
 }
 
 function detailRow(label, value) {
@@ -214,11 +216,10 @@ function applicantText(application) {
 }
 
 export async function sendApplicationEmails(application) {
-  const transporter = getTransporter()
   const companyRecipient = process.env.PLR_HR_EMAIL
 
-  if (!transporter || !companyRecipient) {
-    console.warn('Application email skipped: SMTP or PLR_HR_EMAIL env values are missing.')
+  if (!process.env.RESEND_API_KEY || !companyRecipient) {
+    console.warn('Application email skipped: RESEND_API_KEY or PLR_HR_EMAIL env values are missing.')
     return { skipped: true }
   }
 
@@ -227,8 +228,8 @@ export async function sendApplicationEmails(application) {
   const subjectType = application.applicantType === 'intern' ? 'INTERNSHIP' : 'FULL-TIME'
   const senderName = process.env.MAIL_FROM_NAME_CAREERS || 'PL Robotics Careers'
 
-  await transporter.sendMail({
-    from: fromAddress(senderName),
+  await sendEmail({
+    fromName: senderName,
     to: companyRecipient,
     replyTo: application.email,
     subject: `${subjectType} | ${application.jobTitle} Application - ${name}`,
@@ -237,8 +238,8 @@ export async function sendApplicationEmails(application) {
     text: companyText(application),
   })
 
-  await transporter.sendMail({
-    from: fromAddress(senderName),
+  await sendEmail({
+    fromName: senderName,
     to: application.email,
     replyTo: companyRecipient,
     subject: `APPLICATION RECEIVED | ${application.jobTitle} - ${name}`,
@@ -255,14 +256,13 @@ function inquiryRecipient() {
 }
 
 async function sendWebsiteNotification({ subject, eyebrow, title, intro, rows, replyTo, messageId: notificationMessageId, senderName }) {
-  const transporter = getTransporter()
-  if (!transporter) {
-    console.warn('Website notification email skipped: SMTP env values are missing.')
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('Website notification email skipped: RESEND_API_KEY env value is missing.')
     return { skipped: true }
   }
 
-  await transporter.sendMail({
-    from: fromAddress(senderName),
+  await sendEmail({
+    fromName: senderName,
     to: inquiryRecipient(),
     replyTo,
     subject,
