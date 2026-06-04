@@ -44,7 +44,10 @@ function fromAddress(name) {
 
 async function sendEmail({ fromName, to, replyTo, subject, html, text, messageId: emailMessageId }) {
   const apiKey = process.env.RESEND_API_KEY
-  if (!apiKey) return { skipped: true }
+  if (!apiKey) {
+    console.warn('Resend email skipped: RESEND_API_KEY env value is missing.')
+    return { skipped: true }
+  }
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -65,9 +68,11 @@ async function sendEmail({ fromName, to, replyTo, subject, html, text, messageId
 
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(data.message || data.error || `Resend API error ${response.status}`)
+    const message = data.message || data.error || `Resend API error ${response.status}`
+    throw new Error(`${message} | status=${response.status} | to=${to} | from=${fromAddress(fromName)}`)
   }
 
+  console.log(`Resend email sent: ${data.id} -> ${Array.isArray(to) ? to.join(', ') : to}`)
   return { skipped: false, id: data.id }
 }
 
