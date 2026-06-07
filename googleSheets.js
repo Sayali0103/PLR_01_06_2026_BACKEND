@@ -46,10 +46,17 @@ const DEMO_HEADERS = [
 ]
 
 async function getSheet() {
-  const auth = new google.auth.GoogleAuth({
-    keyFile: process.env.GOOGLE_SHEETS_CREDENTIALS_PATH || process.env.GOOGLE_CREDENTIALS_PATH,
-    scopes: SCOPES,
-  })
+  const credentialsJson = process.env.GOOGLE_SHEETS_CREDENTIALS_JSON
+  const authOptions = { scopes: SCOPES }
+
+  if (credentialsJson) {
+    authOptions.credentials = JSON.parse(credentialsJson)
+  } else {
+    authOptions.keyFile =
+      process.env.GOOGLE_SHEETS_CREDENTIALS_PATH || process.env.GOOGLE_CREDENTIALS_PATH
+  }
+
+  const auth = new google.auth.GoogleAuth(authOptions)
   const client = await auth.getClient()
   return google.sheets({ version: 'v4', auth: client })
 }
