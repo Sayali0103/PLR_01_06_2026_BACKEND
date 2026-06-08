@@ -97,7 +97,7 @@ const jobs = [
     isActive: true,
   },
   {
-    title: 'ROS Developer Engineer',
+    title: 'Robotics Engineer',
     dept: 'Research & Development',
     location: 'Pune, India',
     positionType: 'Full time',
