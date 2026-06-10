@@ -318,9 +318,11 @@ export function sendDemoRequestEmail(request) {
     eyebrow: 'New demo request',
     title: `${name} requested a PL Robotics demo`,
     intro: 'A new demo request has been submitted through the PL Robotics website.',
+    replyTo: request.companyEmail,
     rows: [
       ['Name', name],
       ['Company', request.companyName],
+      ['Company email', request.companyEmail],
       ['Company address', request.companyAddress],
       ['Company contact', request.companyContact],
       ['Interested robot / service', request.interestedIn],

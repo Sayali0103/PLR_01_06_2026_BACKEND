@@ -43,6 +43,7 @@ const DEMO_HEADERS = [
   'Industry Type',
   'Application',
   'Status',
+  'Company Email',
 ]
 
 async function getSheet() {
@@ -80,7 +81,12 @@ async function ensureTabWithHeaders(sheets, tabName, headers) {
   const lastColumn = String.fromCharCode(64 + headers.length)
   const range = `'${tabName}'!A1:${lastColumn}1`
   const result = await sheets.spreadsheets.values.get({ spreadsheetId, range })
-  if (!result.data.values?.[0]?.length) {
+  const existingHeaders = result.data.values?.[0] || []
+  const canSafelyExtendHeaders =
+    existingHeaders.length < headers.length &&
+    existingHeaders.every((header, index) => header === headers[index])
+
+  if (!existingHeaders.length || canSafelyExtendHeaders) {
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `'${tabName}'!A1`,
@@ -163,6 +169,7 @@ export async function appendDemoRequestToSheet(request) {
     request.industryType,
     request.application,
     'New',
+    request.companyEmail,
   ])
   console.log(`Demo request sheet updated - ${request.firstName} ${request.lastName}`)
 }
