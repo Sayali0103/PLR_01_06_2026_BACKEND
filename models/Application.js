@@ -33,6 +33,8 @@ const ApplicationSchema = new mongoose.Schema(
       enum: ['new', 'reviewing', 'shortlisted', 'rejected'],
       default: 'new',
     },
+    atsScore: { type: Number, min: 0, max: 10 },
+    atsScoredAt: { type: Date },
   },
   { timestamps: true }
 )

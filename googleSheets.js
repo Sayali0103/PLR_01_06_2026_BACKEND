@@ -20,6 +20,7 @@ const APPLICATION_HEADERS = [
   'Resume File',
   'Project File',
   'Status',
+  'ATS Score',
 ]
 
 const CONTACT_HEADERS = [
@@ -137,6 +138,7 @@ export async function appendApplicationToSheet(application) {
       application.attachmentDriveLink || application.attachmentFileName || '',
       application.projectDriveLink || application.projectFileName || '',
       'New',
+      application.atsScore == null ? '' : `${application.atsScore.toFixed(1)}/10`,
     ])
     console.log(`Application sheet updated - ${application.firstName} ${application.lastName}`)
   } catch (err) {

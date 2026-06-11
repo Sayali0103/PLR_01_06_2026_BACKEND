@@ -1,0 +1,8 @@
+google-api-python-client==2.162.0
+google-auth==2.38.0
+google-auth-oauthlib==1.2.1
+pymongo==4.11.1
+pypdf==5.3.0
+python-docx==1.1.2
+python-dotenv==1.0.1
+scikit-learn==1.6.1

@@ -5,3 +5,5 @@ google-credentials.json
 google-sheets-credentials.json
 google-drive-credentials.json
 uploads/
+**/__pycache__/
+.venv-ats/
