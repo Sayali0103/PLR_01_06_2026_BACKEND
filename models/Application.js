@@ -35,6 +35,17 @@ const ApplicationSchema = new mongoose.Schema(
     },
     atsScore: { type: Number, min: 0, max: 10 },
     atsScoredAt: { type: Date },
+    previousAtsScore: { type: Number, min: 0, max: 10 },
+    previousAtsScoredAt: { type: Date },
+    atsScoringVersion: { type: String, trim: true },
+    atsMatchedSkills: [{ type: String }],
+    atsMissingSkills: [{ type: String }],
+    atsScoreBreakdown: {
+      requiredSkills: { type: Number, min: 0, max: 10 },
+      preferredSkills: { type: Number, min: 0, max: 10 },
+      semanticRelevance: { type: Number, min: 0, max: 10 },
+      educationAndEvidence: { type: Number, min: 0, max: 10 },
+    },
   },
   { timestamps: true }
 )

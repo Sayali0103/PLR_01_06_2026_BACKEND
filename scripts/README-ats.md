@@ -6,7 +6,7 @@ It:
 
 - reads applications and jobs from MongoDB;
 - downloads resumes from Google Drive;
-- calculates one ATS score out of 10;
+- calculates one explainable hybrid ATS score out of 10;
 - stores `atsScore` and `atsScoredAt` in MongoDB;
 - writes the score into the existing `Applications` Google Sheet;
 - renames legacy ROS developer application titles to `Robotics Engineer`.
@@ -26,6 +26,17 @@ For resume downloads it first uses `GOOGLE_DRIVE_CREDENTIALS_PATH`, then the
 local `google-drive-credentials.json`, and finally the existing Drive OAuth
 values from `.env`.
 
+The hybrid score uses:
+
+- required skills: 40%;
+- preferred skills: 10%;
+- local `all-MiniLM-L6-v2` semantic responsibility/project relevance: 35%;
+- education and practical evidence: 15%.
+
+When an existing score is replaced, it is preserved as `previousAtsScore` and
+`previousAtsScoredAt`. The score breakdown and matched/missing skills are also
+stored in MongoDB.
+
 ## Run
 
 Preview changes without writing:
@@ -44,6 +55,12 @@ Recalculate every applicant:
 
 ```powershell
 python scripts\score_applications.py --rescore
+```
+
+Always preview rescoring first:
+
+```powershell
+python scripts\score_applications.py --rescore --dry-run
 ```
 
 Use `--limit 5` to process only a small batch.

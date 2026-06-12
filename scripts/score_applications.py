@@ -17,8 +17,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from pymongo import MongoClient
 from pypdf import PdfReader
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer, util
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -29,6 +28,71 @@ LEGACY_JOB_TITLES = {
     "ros engineer",
 }
 CURRENT_JOB_TITLE = "Robotics Engineer"
+SCORING_VERSION = "hybrid-minilm-v1"
+MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+ROLE_PROFILES = {
+    "Electronics Engineer": {
+        "required": ["embedded c++", "microcontroller", "stm32", "electronics", "communication protocols"],
+        "preferred": ["nvidia jetson", "rtos", "motor control", "linux", "pcb"],
+        "education": ["electronics", "electrical", "embedded", "instrumentation"],
+    },
+    "UI Developer": {
+        "required": ["html", "css", "javascript", "frontend framework", "responsive design", "figma"],
+        "preferred": ["websocket", "python", "ros 2", "linux", "rest api"],
+        "education": ["computer science", "information technology", "software", "design"],
+    },
+    "Robotics Engineer": {
+        "required": ["ros 2", "python", "c++", "moveit 2", "gazebo", "robotics"],
+        "preferred": ["docker", "rviz", "ros control", "can bus", "hardware abstraction layer"],
+        "education": ["robotics", "mechatronics", "computer science", "electronics", "mechanical"],
+    },
+    "Mechanical Engineer": {
+        "required": ["cad", "solidworks", "fea", "gd&t", "dfm", "mechanical engineering"],
+        "preferred": ["prototyping", "gear design", "fusion 360", "robotics", "manufacturing"],
+        "education": ["mechanical", "mechatronics", "production", "manufacturing"],
+    },
+}
+SKILL_ALIASES = {
+    "embedded c++": ["embedded c++", "embedded c", "embedded c/c++", "firmware"],
+    "microcontroller": ["microcontroller", "microcontrollers", "mcu"],
+    "stm32": ["stm32", "stm 32"],
+    "electronics": ["electronics", "electronic circuits", "digital circuits", "analog circuits"],
+    "communication protocols": ["uart", "can", "can bus", "spi", "i2c", "modbus", "ethernet"],
+    "nvidia jetson": ["nvidia jetson", "jetson", "jetpack"],
+    "rtos": ["rtos", "real time operating system", "free rtos", "freertos"],
+    "motor control": ["motor control", "bldc", "servo motor", "stepper motor", "pid control"],
+    "pcb": ["pcb", "printed circuit board", "schematic"],
+    "html": ["html", "html5"],
+    "css": ["css", "css3", "tailwind", "bootstrap"],
+    "javascript": ["javascript", "typescript", "js", "ts"],
+    "frontend framework": ["react", "reactjs", "react.js", "angular", "vue", "vue.js"],
+    "responsive design": ["responsive design", "responsive web", "mobile responsive"],
+    "figma": ["figma", "adobe xd"],
+    "websocket": ["websocket", "websockets", "socket.io"],
+    "rest api": ["rest api", "restful api", "api integration"],
+    "ros 2": ["ros 2", "ros2", "robot operating system 2"],
+    "python": ["python"],
+    "c++": ["c++", "cpp", "c plus plus"],
+    "moveit 2": ["moveit 2", "moveit2", "moveit"],
+    "gazebo": ["gazebo", "ignition gazebo"],
+    "robotics": ["robotics", "robotic", "robot"],
+    "docker": ["docker", "containerization", "containerisation"],
+    "rviz": ["rviz", "rviz2"],
+    "ros control": ["ros control", "ros2 control", "ros_control", "ros2_control"],
+    "can bus": ["can bus", "canbus", "can protocol", "cia 402", "cia402"],
+    "hardware abstraction layer": ["hardware abstraction layer", "hal", "hardware interface"],
+    "cad": ["cad", "computer aided design"],
+    "solidworks": ["solidworks", "solid works"],
+    "fea": ["fea", "finite element analysis"],
+    "gd&t": ["gd&t", "gdt", "geometric dimensioning and tolerancing"],
+    "dfm": ["dfm", "dfma", "design for manufacturing", "design for manufacturability"],
+    "mechanical engineering": ["mechanical engineering", "mechanical engineer"],
+    "prototyping": ["prototyping", "prototype"],
+    "gear design": ["gear design", "gearbox", "harmonic drive", "cycloidal"],
+    "fusion 360": ["fusion 360", "fusion360"],
+    "manufacturing": ["manufacturing", "production engineering"],
+    "linux": ["linux", "ubuntu"],
+}
 HEADER_ALIASES = {
     "Email": {
         "email",
@@ -179,63 +243,170 @@ def job_description(job, fallback_title):
     return "\n".join(str(value) for value in values if value)
 
 
-def meaningful_terms(text):
+def contains_phrase(text, phrase):
+    pattern = rf"(?<!\w){re.escape(normalized(phrase))}(?!\w)"
+    return re.search(pattern, text) is not None
+
+
+def matched_skills(resume_text, skills):
+    text = normalized(resume_text)
+    matched = []
+    missing = []
+    for skill in skills:
+        aliases = SKILL_ALIASES.get(skill, [skill])
+        target = matched if any(contains_phrase(text, alias) for alias in aliases) else missing
+        target.append(skill)
+    return matched, missing
+
+
+def text_chunks(text, max_chars=650):
+    lines = [line.strip() for line in re.split(r"[\r\n]+", text) if line.strip()]
+    chunks = []
+    current = []
+    current_length = 0
+    for line in lines:
+        if current and current_length + len(line) > max_chars:
+            chunks.append(" ".join(current))
+            current = []
+            current_length = 0
+        current.append(line)
+        current_length += len(line) + 1
+    if current:
+        chunks.append(" ".join(current))
+    return chunks or [text[:max_chars]]
+
+
+def semantic_relevance(model, resume_text, job):
+    responsibilities = [
+        str(value).strip()
+        for value in [
+            job.get("overview", ""),
+            *job.get("responsibilities", []),
+        ]
+        if str(value).strip()
+    ]
+    chunks = text_chunks(resume_text)
+    if not responsibilities or not chunks:
+        return 0
+
+    resume_embeddings = model.encode(chunks, convert_to_tensor=True, show_progress_bar=False)
+    responsibility_embeddings = model.encode(
+        responsibilities, convert_to_tensor=True, show_progress_bar=False
+    )
+    similarities = util.cos_sim(responsibility_embeddings, resume_embeddings)
+    best_matches = similarities.max(dim=1).values
+    raw_similarity = float(best_matches.mean())
+
+    # MiniLM similarities around 0.20 are weak and 0.65+ are usually strongly relevant.
+    return min(1, max(0, (raw_similarity - 0.20) / 0.45))
+
+
+def education_and_evidence_score(resume_text, profile, required_matches):
+    text = normalized(resume_text)
+    education_terms = profile.get("education", [])
+    generic_degree_terms = ["bachelor", "b.tech", "btech", "master", "m.tech", "mtech", "degree"]
+    if any(contains_phrase(text, term) for term in education_terms):
+        education = 1
+    elif any(contains_phrase(text, term) for term in generic_degree_terms):
+        education = 0.6
+    else:
+        education = 0.2
+
+    evidence_terms = [
+        "project",
+        "experience",
+        "internship",
+        "developed",
+        "designed",
+        "built",
+        "implemented",
+        "research",
+    ]
+    has_practical_evidence = any(contains_phrase(text, term) for term in evidence_terms)
+    if required_matches and has_practical_evidence:
+        evidence = 1
+    elif required_matches or has_practical_evidence:
+        evidence = 0.5
+    else:
+        evidence = 0
+    return (education + evidence) / 2
+
+
+def scoring_profile(job, fallback_title):
+    title = canonical_job_title(job.get("title") if job else fallback_title)
+    profile = ROLE_PROFILES.get(title)
+    if profile:
+        return profile
     return {
-        token
-        for token in re.findall(r"[a-zA-Z][a-zA-Z0-9+#.-]{1,}", normalized(text))
-        if len(token) > 2
+        "required": [normalized(tag) for tag in job.get("tags", []) if str(tag).strip()],
+        "preferred": [],
+        "education": [],
     }
 
 
-def score_resume(resume_text, description, job):
-    vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
-    matrix = vectorizer.fit_transform([resume_text, description])
-    similarity = float(cosine_similarity(matrix[0:1], matrix[1:2])[0][0])
+def score_resume(model, resume_text, job, fallback_title):
+    profile = scoring_profile(job, fallback_title)
+    required_matches, required_missing = matched_skills(resume_text, profile["required"])
+    preferred_matches, preferred_missing = matched_skills(resume_text, profile["preferred"])
 
-    skill_phrases = []
-    if job:
-        skill_phrases = [
-            str(skill).strip()
-            for skill in job.get("tags", [])
-            if str(skill).strip()
-        ]
+    required_ratio = len(required_matches) / len(profile["required"]) if profile["required"] else 0
+    preferred_ratio = len(preferred_matches) / len(profile["preferred"]) if profile["preferred"] else 0
+    semantic_ratio = semantic_relevance(model, resume_text, job)
+    evidence_ratio = education_and_evidence_score(resume_text, profile, required_matches)
 
-    resume_normalized = normalized(resume_text)
-    if skill_phrases:
-        matched = sum(normalized(skill) in resume_normalized for skill in skill_phrases)
-        skills_ratio = matched / len(skill_phrases)
-    else:
-        description_terms = meaningful_terms(description)
-        resume_terms = meaningful_terms(resume_text)
-        skills_ratio = (
-            len(description_terms & resume_terms) / len(description_terms)
-            if description_terms
-            else 0
-        )
+    score = (
+        (required_ratio * 4.0)
+        + (preferred_ratio * 1.0)
+        + (semantic_ratio * 3.5)
+        + (evidence_ratio * 1.5)
+    )
+    if required_ratio == 0:
+        score = min(score, 4.5)
+    elif required_ratio < 0.34:
+        score = min(score, 6.5)
 
-    # Resume/JD cosine values are usually well below 1, so normalize 0.5 as a strong match.
-    normalized_similarity = min(similarity / 0.5, 1)
-    return round(min(10, max(0, 10 * ((0.7 * normalized_similarity) + (0.3 * skills_ratio)))), 1)
+    return {
+        "score": round(min(10, max(0, score)), 1),
+        "matchedSkills": required_matches + preferred_matches,
+        "missingSkills": required_missing + preferred_missing,
+        "breakdown": {
+            "requiredSkills": round(required_ratio * 10, 1),
+            "preferredSkills": round(preferred_ratio * 10, 1),
+            "semanticRelevance": round(semantic_ratio * 10, 1),
+            "educationAndEvidence": round(evidence_ratio * 10, 1),
+        },
+    }
 
 
 def ensure_sheet_headers(sheets, spreadsheet_id, dry_run):
     result = sheets.spreadsheets().values().get(
         spreadsheetId=spreadsheet_id,
-        range=f"'{APPLICATION_TAB}'!1:1",
+        range=f"'{APPLICATION_TAB}'!A1:ZZ20",
     ).execute()
-    headers = result.get("values", [[]])[0]
+    candidate_rows = result.get("values", [])
+    headers = None
+    header_row_number = None
+    for row_number, row in enumerate(candidate_rows, start=1):
+        resolved = resolve_header_map(row)
+        if {"Email", "Job Title"}.issubset(resolved):
+            headers = row
+            header_row_number = row_number
+            break
+
+    if headers is None:
+        raise RuntimeError("Could not locate the Applications spreadsheet header row")
 
     if "ATS Score" not in headers:
         headers.append("ATS Score")
         if not dry_run:
             sheets.spreadsheets().values().update(
                 spreadsheetId=spreadsheet_id,
-                range=f"'{APPLICATION_TAB}'!A1",
+                range=f"'{APPLICATION_TAB}'!A{header_row_number}",
                 valueInputOption="RAW",
                 body={"values": [headers]},
             ).execute()
 
-    return headers
+    return headers, header_row_number
 
 
 def load_sheet_rows(sheets, spreadsheet_id):
@@ -246,18 +417,25 @@ def load_sheet_rows(sheets, spreadsheet_id):
     return result.get("values", [])
 
 
-def sheet_row_matches(rows, header_map, application, claimed_rows):
+def sheet_row_matches(rows, header_row_number, header_map, application, claimed_rows):
     email = normalized(application.get("email"))
     job_title = normalized(canonical_job_title(application.get("jobTitle")))
     matches = []
 
-    for row_number, row in enumerate(rows[1:], start=2):
-        if row_number in claimed_rows:
+    for row_number, row in enumerate(rows, start=1):
+        if row_number == header_row_number or row_number in claimed_rows:
             continue
-        row_email = normalized(row[header_map["Email"]]) if len(row) > header_map["Email"] else ""
-        raw_row_title = row[header_map["Job Title"]] if len(row) > header_map["Job Title"] else ""
-        row_title = normalized(canonical_job_title(raw_row_title))
-        if row_email == email and row_title == job_title:
+        email_candidates = {
+            normalized(row[index])
+            for index in {header_map["Email"], 6}
+            if len(row) > index
+        }
+        title_candidates = {
+            normalized(canonical_job_title(row[index]))
+            for index in {header_map["Job Title"], 10}
+            if len(row) > index
+        }
+        if email in email_candidates and job_title in title_candidates:
             matches.append(row_number)
     return matches
 
@@ -279,10 +457,10 @@ def update_sheet_row(sheets, spreadsheet_id, header_map, row_number, title, scor
     ).execute()
 
 
-def migrate_sheet_titles(sheets, spreadsheet_id, rows, header_map, dry_run):
+def migrate_sheet_titles(sheets, spreadsheet_id, rows, header_row_number, header_map, dry_run):
     title_column = header_map["Job Title"]
     updates = []
-    for row_number, row in enumerate(rows[1:], start=2):
+    for row_number, row in enumerate(rows[header_row_number:], start=header_row_number + 1):
         title = row[title_column] if len(row) > title_column else ""
         if normalized(title) in LEGACY_JOB_TITLES:
             updates.append(
@@ -315,8 +493,10 @@ def main():
     sheets = build("sheets", "v4", credentials=sheets_credentials(), cache_discovery=False)
     drive = build("drive", "v3", credentials=drive_credentials(), cache_discovery=False)
     spreadsheet_id = required_env("GOOGLE_SHEET_ID")
+    print(f"Loading local semantic model: {MODEL_NAME}")
+    model = SentenceTransformer(MODEL_NAME)
 
-    headers = ensure_sheet_headers(sheets, spreadsheet_id, args.dry_run)
+    headers, header_row_number = ensure_sheet_headers(sheets, spreadsheet_id, args.dry_run)
     header_map = resolve_header_map(headers)
     required_headers = {"Email", "Job Title", "ATS Score"}
     if not required_headers.issubset(header_map):
@@ -325,7 +505,9 @@ def main():
             f"Found: {headers}"
         )
     rows = load_sheet_rows(sheets, spreadsheet_id)
-    sheet_title_updates = migrate_sheet_titles(sheets, spreadsheet_id, rows, header_map, args.dry_run)
+    sheet_title_updates = migrate_sheet_titles(
+        sheets, spreadsheet_id, rows, header_row_number, header_map, args.dry_run
+    )
 
     query = {} if args.rescore else {"atsScore": {"$exists": False}}
     cursor = applications.find(query).sort("createdAt", 1)
@@ -355,9 +537,11 @@ def main():
             if not resume_text:
                 raise ValueError("Resume contains no extractable text")
 
-            score = score_resume(resume_text, description, job)
+            result = score_resume(model, resume_text, job, title)
+            score = result["score"]
             matches = sheet_row_matches(
                 rows,
+                header_row_number,
                 header_map,
                 {**application, "jobTitle": title},
                 claimed_sheet_rows,
@@ -368,20 +552,29 @@ def main():
             claimed_sheet_rows.add(row_number)
 
             if not args.dry_run:
+                score_fields = {
+                    "jobTitle": title,
+                    "atsScore": score,
+                    "atsScoredAt": datetime.now(timezone.utc),
+                    "atsScoringVersion": SCORING_VERSION,
+                    "atsMatchedSkills": result["matchedSkills"],
+                    "atsMissingSkills": result["missingSkills"],
+                    "atsScoreBreakdown": result["breakdown"],
+                }
+                if application.get("atsScore") is not None:
+                    score_fields["previousAtsScore"] = application["atsScore"]
+                    score_fields["previousAtsScoredAt"] = application.get("atsScoredAt")
                 applications.update_one(
                     {"_id": application["_id"]},
-                    {
-                        "$set": {
-                            "jobTitle": title,
-                            "atsScore": score,
-                            "atsScoredAt": datetime.now(timezone.utc),
-                        }
-                    },
+                    {"$set": score_fields},
                 )
                 update_sheet_row(sheets, spreadsheet_id, header_map, row_number, title, score)
 
             counters["scored"] += 1
-            print(f"SCORED {score:.1f}/10 | {label}")
+            old_score = application.get("atsScore")
+            change = f" (was {old_score:.1f})" if old_score is not None else ""
+            matched = ", ".join(result["matchedSkills"]) or "none"
+            print(f"SCORED {score:.1f}/10{change} | {label} | matched: {matched}")
         except Exception as error:
             counters["failed"] += 1
             print(f"FAILED | {label} | {error}", file=sys.stderr)
