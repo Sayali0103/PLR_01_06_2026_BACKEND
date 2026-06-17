@@ -42,9 +42,14 @@ ROLE_PROFILES = {
         "education": ["computer science", "information technology", "software", "design"],
     },
     "Robotics Engineer": {
-        "required": ["ros 2", "python", "c++", "moveit 2", "gazebo", "robotics"],
-        "preferred": ["docker", "rviz", "ros control", "can bus", "hardware abstraction layer"],
+        "required": ["ros 2", "moveit 2", "cad", "stm32", "robotics", "mechanical engineering"],
+        "preferred": ["python", "c++", "gazebo", "rviz", "ros control", "can bus", "hardware abstraction layer"],
         "education": ["robotics", "mechatronics", "computer science", "electronics", "mechanical"],
+    },
+    "Technical Sales Engineer": {
+        "required": ["robotics", "automation", "technical sales", "technical proposals", "customer demos"],
+        "preferred": ["manufacturing", "cad", "crm", "b2b sales", "industrial equipment"],
+        "education": ["mechanical", "mechatronics", "electronics", "robotics", "business"],
     },
     "Mechanical Engineer": {
         "required": ["cad", "solidworks", "fea", "gd&t", "dfm", "mechanical engineering"],
@@ -92,6 +97,13 @@ SKILL_ALIASES = {
     "fusion 360": ["fusion 360", "fusion360"],
     "manufacturing": ["manufacturing", "production engineering"],
     "linux": ["linux", "ubuntu"],
+    "automation": ["automation", "industrial automation"],
+    "technical sales": ["technical sales", "sales engineer", "sales engineering"],
+    "technical proposals": ["technical proposal", "technical proposals", "proposal", "quotation"],
+    "customer demos": ["customer demo", "customer demos", "demo", "demonstration"],
+    "crm": ["crm", "customer relationship management"],
+    "b2b sales": ["b2b sales", "business development", "lead generation"],
+    "industrial equipment": ["industrial equipment", "machine tools", "factory equipment"],
 }
 HEADER_ALIASES = {
     "Email": {
@@ -237,6 +249,7 @@ def job_description(job, fallback_title):
         job.get("overview") if job else "",
         *(job.get("responsibilities", []) if job else []),
         *(job.get("requiredSkills", []) if job else []),
+        *(job.get("educationRequirements", []) if job else []),
         *(job.get("additionalSkills", []) if job else []),
         *(job.get("tags", []) if job else []),
     ]

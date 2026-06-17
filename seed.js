@@ -102,7 +102,7 @@ const jobs = [
     location: 'Pune, India',
     positionType: 'Full time',
     overview:
-      'Work on the full stack of robotic software — from hardware abstraction layers to advanced motion planning and digital twins. You will develop and maintain robotics software using Python and C++ in ROS 2, implement motion planning with MoveIt 2, and build digital twin environments using Gazebo and RViz.',
+      'Work across robot design, controls, embedded systems, and motion planning. Key skills include ROS2, MOVEIT2, CAD modelling, and STM32 programming, with the ability to validate solutions on real robots from prototype to deployment.',
     responsibilities: [
       'Develop and maintain robotics software using Python and C++ in ROS 2 for core system architecture, node creation, and lifecycle management.',
       'Implement motion planning, trajectory generation, and inverse kinematics using MoveIt 2 for industrial robotic applications.',
@@ -131,10 +131,10 @@ const jobs = [
     additionalSkills: [],
     whyJoin: [
       'Build the software brain of next-generation Indian cobots.',
-      'Work across simulation and real hardware — Gazebo to factory floor.',
+      'Work across simulation and real hardware, from Gazebo to factory floor.',
       'Be part of a full robotics stack from HAL to motion planning.',
     ],
-    tags: ['ROS 2', 'MoveIt 2', 'Python', 'C++', 'Gazebo', 'Docker'],
+    tags: ['ROS2', 'MOVEIT2', 'CAD modelling', 'STM32 programming', 'Gazebo'],
     applyInternUrl: 'https://forms.gle/s1XKDiRdrzaBeq347',
     applyJobUrl: 'https://forms.gle/s1XKDiRdrzaBeq347',
     isPaid: true,
@@ -146,7 +146,7 @@ const jobs = [
     location: 'Pune, India',
     positionType: 'Full time',
     overview:
-      'Work on CAD Design, Prototyping, DFA, DFM, and simulate precision gearbox systems for robotics applications. You will own sub-projects on our Harmonic Gear Drive and Cycloidal Gearbox systems, contribute ideas, and actively engage in the product development journey — from refining designs to preparing manufacturing-ready documentation.',
+      'Work on CAD Design, Prototyping, DFA, DFM, and simulate precision gearbox systems for robotics applications. You will own sub-projects on our Harmonic Gear Drive and Cycloidal Gearbox systems, contribute ideas, refine designs, and prepare manufacturing-ready documentation.',
     responsibilities: [
       'Refine initial parameter estimations and structured design methodologies.',
       'Develop and optimise existing CAD models for gearbox systems.',
@@ -177,6 +177,48 @@ const jobs = [
       'Opportunity to see your designs move from CAD to a working robot.',
     ],
     tags: ['SolidWorks', 'FEA', 'GD&T', 'CAD', 'DFM', 'Prototyping'],
+    applyInternUrl: 'https://forms.gle/s1XKDiRdrzaBeq347',
+    applyJobUrl: 'https://forms.gle/s1XKDiRdrzaBeq347',
+    isPaid: true,
+    isActive: true,
+  },
+  {
+    title: 'Technical Sales Engineer',
+    dept: 'Sales & Business Development',
+    location: 'Pune, India',
+    positionType: 'Full time',
+    overview:
+      'Work at the intersection of industrial automation, robotics, and customer requirements. You will understand factory applications, explain PLR robotic solutions clearly, prepare technical proposals, coordinate demos, and help customers choose practical automation systems that fit their production needs.',
+    responsibilities: [
+      'Understand customer automation requirements through calls, visits, demos, and technical discussions.',
+      'Explain PLR robotic products, applications, and integration possibilities to manufacturing customers.',
+      'Prepare technical proposals, quotations, presentations, and solution notes with engineering inputs.',
+      'Coordinate with robotics, mechanical, electronics, and software teams to validate feasibility and scope.',
+      'Support product demos, proof-of-concept discussions, and follow-ups with prospective customers.',
+      'Maintain CRM records, track leads, and support the sales cycle from enquiry to closure.',
+    ],
+    requiredSkills: [
+      'Strong technical understanding of robotics, automation, mechanical systems, or industrial equipment.',
+      'Ability to communicate technical concepts clearly to customers and internal engineering teams.',
+      'Good presentation, documentation, negotiation, and follow-up skills.',
+      'Basic understanding of manufacturing processes, factory layouts, cycle time, and automation ROI.',
+      'Comfort with customer visits, demos, requirement gathering, and proposal preparation.',
+      'Self-driven attitude with the ability to learn PLR products and convert customer problems into solution briefs.',
+    ],
+    educationRequirements: [
+      'MBA, BMS, BBA, BE/B.Tech, or equivalent education in business, sales, marketing, mechanical, mechatronics, electronics, robotics, or a related field.',
+    ],
+    additionalSkills: [
+      'Experience in B2B technical sales, industrial automation, robotics, machine tools, or manufacturing solutions.',
+      'Familiarity with CAD drawings, robot applications, end effectors, PLCs, sensors, or vision systems.',
+      'Knowledge of CRM tools, Excel/Sheets, proposal documents, and sales reporting.',
+    ],
+    whyJoin: [
+      'Work closely with customers adopting next-generation Indian robotics.',
+      'Bridge real factory problems with practical automation solutions.',
+      'Collaborate directly with engineering teams on live product and deployment opportunities.',
+    ],
+    tags: ['Robotics Sales', 'Automation', 'Technical Proposals', 'Customer Demos', 'B2B Sales'],
     applyInternUrl: 'https://forms.gle/s1XKDiRdrzaBeq347',
     applyJobUrl: 'https://forms.gle/s1XKDiRdrzaBeq347',
     isPaid: true,

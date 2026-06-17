@@ -9,6 +9,7 @@ const JobSchema = new mongoose.Schema(
     overview: { type: String, required: true },
     responsibilities: [{ type: String }],
     requiredSkills: [{ type: String }],
+    educationRequirements: [{ type: String }],
     additionalSkills: [{ type: String }],
     whyJoin: [{ type: String }],
     tags: [{ type: String }],
