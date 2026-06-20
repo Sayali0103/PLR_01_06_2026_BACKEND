@@ -22,6 +22,24 @@ from sentence_transformers import SentenceTransformer, util
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 APPLICATION_TAB = "Applications"
+RAW_APPLICATION_HEADERS = [
+    "Date",
+    "First Name",
+    "Middle Name",
+    "Last Name",
+    "Date of Birth",
+    "Phone",
+    "Email",
+    "Current Location",
+    "Currently Employed?",
+    "Employer / Notice Period",
+    "Job Title",
+    "Application Type",
+    "Resume File",
+    "Project File",
+    "Status",
+    "ATS Score",
+]
 LEGACY_JOB_TITLES = {
     "ros developer engineer",
     "ros developer",
@@ -166,6 +184,12 @@ def column_letter(index):
     return result
 
 
+def format_sheet_date(value):
+    if isinstance(value, datetime):
+        return value.astimezone().strftime("%d/%m/%Y, %I:%M:%S %p")
+    return str(value or "")
+
+
 def resolve_header_map(headers):
     normalized_headers = {normalized(header): index for index, header in enumerate(headers)}
     resolved = {}
@@ -175,6 +199,27 @@ def resolve_header_map(headers):
                 resolved[logical_name] = normalized_headers[normalized(alias)]
                 break
     return resolved
+
+
+def raw_application_row(application, title, score):
+    return [
+        format_sheet_date(application.get("createdAt")),
+        application.get("firstName", ""),
+        application.get("middleName", ""),
+        application.get("lastName", ""),
+        application.get("dob", ""),
+        application.get("phone", ""),
+        application.get("email", ""),
+        application.get("currentLocation", ""),
+        "Yes" if application.get("currentlyEmployed") else "No",
+        application.get("employerDetails", ""),
+        title,
+        "Intern" if application.get("applicantType") == "intern" else "Full-time Employee",
+        application.get("attachmentDriveLink") or application.get("attachmentFileName") or "",
+        application.get("projectDriveLink") or application.get("projectFileName") or "",
+        str(application.get("status") or "new").title(),
+        f"{score:.1f}/10",
+    ]
 
 
 def sheets_credentials():
@@ -391,10 +436,26 @@ def score_resume(model, resume_text, job, fallback_title):
     }
 
 
+def parse_updated_row_number(updated_range):
+    match = re.search(r"!(?:[A-Z]+)(\d+):", updated_range or "")
+    return int(match.group(1)) if match else None
+
+
+def append_sheet_row(sheets, spreadsheet_id, values):
+    result = sheets.spreadsheets().values().append(
+        spreadsheetId=spreadsheet_id,
+        range=f"'{APPLICATION_TAB}'!A1",
+        valueInputOption="RAW",
+        insertDataOption="INSERT_ROWS",
+        body={"values": [values]},
+    ).execute()
+    return parse_updated_row_number(result.get("updates", {}).get("updatedRange"))
+
+
 def ensure_sheet_headers(sheets, spreadsheet_id, dry_run):
     result = sheets.spreadsheets().values().get(
         spreadsheetId=spreadsheet_id,
-        range=f"'{APPLICATION_TAB}'!A1:ZZ20",
+        range=f"'{APPLICATION_TAB}'!A:ZZ",
     ).execute()
     candidate_rows = result.get("values", [])
     headers = None
@@ -407,7 +468,15 @@ def ensure_sheet_headers(sheets, spreadsheet_id, dry_run):
             break
 
     if headers is None:
-        raise RuntimeError("Could not locate the Applications spreadsheet header row")
+        headers = RAW_APPLICATION_HEADERS.copy()
+        header_row_number = len(candidate_rows) + 1
+        if not dry_run:
+            appended_row_number = append_sheet_row(sheets, spreadsheet_id, headers)
+            header_row_number = appended_row_number or header_row_number
+        print(
+            "Could not locate an Email + Job Title header row; "
+            f"using a raw ATS section at row {header_row_number}."
+        )
 
     if "ATS Score" not in headers:
         headers.append("ATS Score")
@@ -470,6 +539,14 @@ def update_sheet_row(sheets, spreadsheet_id, header_map, row_number, title, scor
     ).execute()
 
 
+def append_raw_application_row(sheets, spreadsheet_id, application, title, score):
+    return append_sheet_row(
+        sheets,
+        spreadsheet_id,
+        raw_application_row(application, title, score),
+    )
+
+
 def migrate_sheet_titles(sheets, spreadsheet_id, rows, header_row_number, header_map, dry_run):
     title_column = header_map["Job Title"]
     updates = []
@@ -527,7 +604,7 @@ def main():
     if args.limit:
         cursor = cursor.limit(args.limit)
 
-    counters = {"scored": 0, "skipped": 0, "failed": 0, "titles": 0}
+    counters = {"scored": 0, "skipped": 0, "failed": 0, "titles": 0, "sheet_appends": 0}
     claimed_sheet_rows = set()
     for application in cursor:
         label = f"{application.get('email', 'unknown')} | {application.get('jobTitle', 'unknown')}"
@@ -559,10 +636,9 @@ def main():
                 {**application, "jobTitle": title},
                 claimed_sheet_rows,
             )
-            if not matches:
-                raise ValueError("No unclaimed spreadsheet row found")
-            row_number = matches[0]
-            claimed_sheet_rows.add(row_number)
+            row_number = matches[0] if matches else None
+            if row_number:
+                claimed_sheet_rows.add(row_number)
 
             if not args.dry_run:
                 score_fields = {
@@ -581,13 +657,28 @@ def main():
                     {"_id": application["_id"]},
                     {"$set": score_fields},
                 )
-                update_sheet_row(sheets, spreadsheet_id, header_map, row_number, title, score)
+                if row_number:
+                    update_sheet_row(sheets, spreadsheet_id, header_map, row_number, title, score)
+                else:
+                    appended_row = append_raw_application_row(
+                        sheets,
+                        spreadsheet_id,
+                        {**application, "jobTitle": title},
+                        title,
+                        score,
+                    )
+                    if appended_row:
+                        claimed_sheet_rows.add(appended_row)
+                    counters["sheet_appends"] += 1
+            elif not row_number:
+                counters["sheet_appends"] += 1
 
             counters["scored"] += 1
             old_score = application.get("atsScore")
             change = f" (was {old_score:.1f})" if old_score is not None else ""
             matched = ", ".join(result["matchedSkills"]) or "none"
-            print(f"SCORED {score:.1f}/10{change} | {label} | matched: {matched}")
+            sheet_action = "updated sheet row" if row_number else "appended raw sheet row"
+            print(f"SCORED {score:.1f}/10{change} | {label} | {sheet_action} | matched: {matched}")
         except Exception as error:
             counters["failed"] += 1
             print(f"FAILED | {label} | {error}", file=sys.stderr)
@@ -603,6 +694,7 @@ def main():
 
     print(
         f"Done: {counters['scored']} scored, {counters['failed']} failed, "
+        f"{counters['sheet_appends']} raw sheet appends, "
         f"{counters['titles']} legacy title updates{' (dry run)' if args.dry_run else ''}."
     )
 
