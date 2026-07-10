@@ -1,5 +1,5 @@
 const brand = {
-  orange: '#ff9501',
+  orange: '#FF7D00',
   ink: '#1a1208',
   muted: '#6f6256',
   line: '#eadfd3',
