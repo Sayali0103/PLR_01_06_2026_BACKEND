@@ -256,6 +256,78 @@ export async function sendApplicationEmails(application) {
   return { skipped: false }
 }
 
+export async function sendInterviewScheduledEmail(application) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is required to send interview confirmations')
+  }
+
+  const interview = application.interview
+  const dateTime = new Date(interview.startAt).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata', dateStyle: 'full', timeStyle: 'short',
+  })
+  const name = fullName(application)
+  const senderName = process.env.MAIL_FROM_NAME_CAREERS || 'PL Robotics Careers'
+  const rows = [
+    ['Role', application.jobTitle],
+    ['Date and time', `${dateTime} IST`],
+    ['Google Meet link', interview.meetLink],
+  ]
+
+  return sendEmail({
+    fromName: senderName,
+    to: application.email,
+    replyTo: process.env.PLR_HR_EMAIL,
+    subject: `INTERVIEW SCHEDULED | ${application.jobTitle} - PL Robotics`,
+    messageId: messageId(application, 'interview-scheduled'),
+    html: emailShell({
+      eyebrow: 'Interview scheduled',
+      title: `Your PL Robotics interview is confirmed`,
+      intro: `Hi ${escapeHtml(application.firstName || name)}, your interview for ${escapeHtml(application.jobTitle)} has been scheduled.`,
+      body: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rows.map(([label, value]) => detailRow(label, value)).join('')}</table>
+        <p style="margin:22px 0 0;color:${brand.ink};font-size:15px;line-height:1.8;">Please join using the Google Meet link a few minutes before your scheduled time.</p>`,
+      footer: 'Regards,<br><strong style="color:#1a1208;">PL Robotics Careers Team</strong>',
+    }),
+    text: [`Hi ${application.firstName || name},`, '', `Your interview for ${application.jobTitle} is scheduled for ${dateTime} IST.`, `Google Meet: ${interview.meetLink}`, '', 'Regards,', 'PL Robotics Careers Team'].join('\n'),
+  })
+}
+
+export async function sendInterviewAssignmentEmail(application, interviewer) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is required to send interview assignments')
+  }
+
+  const interview = application.interview
+  const candidateName = fullName(application)
+  const dateTime = new Date(interview.startAt).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata', dateStyle: 'full', timeStyle: 'short',
+  })
+  const senderName = process.env.MAIL_FROM_NAME_CAREERS || 'PL Robotics Careers'
+  const rows = [
+    ['Candidate', candidateName],
+    ['Role', application.jobTitle],
+    ['Date and time', `${dateTime} IST`],
+    ['Candidate email', application.email],
+    ['Candidate phone', application.phone],
+    ['Google Meet link', interview.meetLink],
+  ]
+
+  return sendEmail({
+    fromName: senderName,
+    to: interviewer.email,
+    replyTo: application.email,
+    subject: `INTERVIEW ASSIGNED | ${candidateName} — ${application.jobTitle}`,
+    messageId: messageId(application, 'interview-assignment'),
+    html: emailShell({
+      eyebrow: 'Interview assignment',
+      title: `You are assigned to interview ${candidateName}`,
+      intro: `Please conduct the candidate interview at the scheduled time using the Google Meet link below.`,
+      body: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rows.map(([label, value]) => detailRow(label, value)).join('')}</table>`,
+      footer: 'This interview was assigned through the PL Robotics careers system.',
+    }),
+    text: ['PL Robotics interview assignment', '', ...rows.map(([label, value]) => `${label}: ${value}`)].join('\n'),
+  })
+}
+
 function inquiryRecipient() {
   return process.env.PLR_CONTACT_EMAIL || 'contact@plrobotics.com'
 }
