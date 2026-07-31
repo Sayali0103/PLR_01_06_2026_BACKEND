@@ -140,10 +140,12 @@ router.post('/schedule-interviews', adminAuth, async (req, res) => {
   if (!Array.isArray(assignments) || assignments.length !== applicationIds.length) {
     return res.status(400).json({ error: 'Assign an interviewer to every candidate.' })
   }
+
   const assignmentMap = new Map(assignments.map(assignment => [assignment.applicationId, assignment.interviewerEmail?.toLowerCase()]))
   if (assignmentMap.size !== applicationIds.length || applicationIds.some(id => !assignmentMap.has(id))) {
     return res.status(400).json({ error: 'Assign one interviewer to every selected candidate.' })
   }
+
   const interviewerByApplicationId = new Map(applicationIds.map(id => {
     const interviewer = interviewers.find(person => person.email.toLowerCase() === assignmentMap.get(id))
     return [id, interviewer]
@@ -156,73 +158,88 @@ router.post('/schedule-interviews', adminAuth, async (req, res) => {
   const dayEnd = new Date(`${date}T23:59:59.999+05:30`)
   const weekday = new Date(`${date}T12:00:00+05:30`).getDay()
   const windowStart = new Date(`${date}T15:00:00+05:30`)
-  if (![0, 4].includes(weekday) || windowStart <= new Date()) {
+  const now = new Date()
+  if (![0, 4].includes(weekday) || windowStart <= now) {
     return res.status(400).json({ error: 'Interviews must be scheduled for a future Thursday or Sunday.' })
   }
 
   try {
-    const alreadyScheduled = await Application.countDocuments({
-      'interview.startAt': { $gte: dayStart, $lte: dayEnd },
-      'interview.status': 'scheduled',
-    })
-    if (alreadyScheduled) return res.status(409).json({ error: 'An interview batch already exists for this date.' })
+    const existingBatch = await InterviewBatch.findOne({ interviewDate: date })
+    const existingIds = existingBatch ? existingBatch.applicationIds.map(id => id.toString()) : []
+    const existingCount = existingIds.length
 
-    const applications = await Application.find({ _id: { $in: applicationIds } })
-    if (applications.length !== applicationIds.length) return res.status(404).json({ error: 'One or more applications no longer exist.' })
-    if (applications.some(application => application.interview?.status === 'scheduled')) {
-      return res.status(409).json({ error: 'A selected candidate already has a scheduled interview.' })
+    if (existingCount >= 10) {
+      return res.status(409).json({ error: 'The interview slot for this date is already fully booked.' })
+    }
+    if (existingCount + applicationIds.length > 10) {
+      return res.status(409).json({ error: `Only ${10 - existingCount} candidate slot(s) remain for this date.` })
+    }
+    if (existingBatch && applicationIds.some(id => existingIds.includes(id))) {
+      return res.status(400).json({ error: 'One or more selected candidates are already scheduled for this date.' })
     }
 
-    let batch
-    try {
-      batch = await InterviewBatch.create({ interviewDate: date, applicationIds })
-    } catch (err) {
-      if (err?.code === 11000) return res.status(409).json({ error: 'An interview batch already exists for this date.' })
-      throw err
+    const applications = await Application.find({ _id: { $in: applicationIds } })
+    if (applications.length !== applicationIds.length) {
+      return res.status(404).json({ error: 'One or more applications no longer exist.' })
+    }
+    if (applications.some(application => application.interview?.status === 'scheduled')) {
+      return res.status(409).json({ error: 'A selected candidate already has a scheduled interview.' })
     }
 
     const ordered = applicationIds.map(id => ({
       application: applications.find(application => application._id.toString() === id),
       interviewer: interviewerByApplicationId.get(id),
     }))
-    const slotLengthMs = (2 * 60 * 60 * 1000) / ordered.length
+
+    const totalSlots = 10
+    const slotLengthMs = (2 * 60 * 60 * 1000) / totalSlots
     const createdEvents = []
+
     try {
       for (let index = 0; index < ordered.length; index += 1) {
-        const startAt = new Date(windowStart.getTime() + index * slotLengthMs)
+        const slotIndex = existingCount + index
+        const startAt = new Date(windowStart.getTime() + slotIndex * slotLengthMs)
         const endAt = new Date(startAt.getTime() + slotLengthMs)
         const { application, interviewer } = ordered[index]
         const calendar = await createInterviewCalendarEvent({ application, interviewer, startAt, endAt })
         createdEvents.push({ application, interviewer, startAt, endAt, calendar })
       }
+
+      const scheduled = []
+      for (const item of createdEvents) {
+        item.application.interview = {
+          startAt: item.startAt,
+          endAt: item.endAt,
+          timezone: 'Asia/Kolkata',
+          meetLink: item.calendar.meetLink,
+          calendarEventId: item.calendar.eventId,
+          interviewerName: item.interviewer.name,
+          interviewerEmail: item.interviewer.email,
+          status: 'scheduled',
+          scheduledAt: new Date(),
+        }
+        await item.application.save()
+        scheduled.push(item.application)
+      }
+
+      if (existingBatch) {
+        existingBatch.applicationIds.push(...applicationIds)
+        await existingBatch.save()
+      } else {
+        await InterviewBatch.create({ interviewDate: date, applicationIds })
+      }
+
+      const emailResults = await Promise.allSettled(createdEvents.flatMap(item => [
+        sendInterviewScheduledEmail(item.application),
+        sendInterviewAssignmentEmail(item.application, item.interviewer),
+      ]))
+      const failedEmails = emailResults.filter(result => result.status === 'rejected').length
+
+      res.status(201).json({ scheduled: scheduled.length, failedEmails })
     } catch (err) {
       await Promise.allSettled(createdEvents.map(({ calendar }) => deleteInterviewCalendarEvent(calendar.eventId)))
-      await batch.deleteOne()
       throw err
     }
-
-    const scheduled = []
-    for (const item of createdEvents) {
-      item.application.interview = {
-        startAt: item.startAt,
-        endAt: item.endAt,
-        timezone: 'Asia/Kolkata',
-        meetLink: item.calendar.meetLink,
-        calendarEventId: item.calendar.eventId,
-        interviewerName: item.interviewer.name,
-        interviewerEmail: item.interviewer.email,
-        status: 'scheduled',
-        scheduledAt: new Date(),
-      }
-      await item.application.save()
-      scheduled.push(item.application)
-    }
-    const emailResults = await Promise.allSettled(createdEvents.flatMap(item => [
-      sendInterviewScheduledEmail(item.application),
-      sendInterviewAssignmentEmail(item.application, item.interviewer),
-    ]))
-    const failedEmails = emailResults.filter(result => result.status === 'rejected').length
-    res.status(201).json({ scheduled: scheduled.length, failedEmails })
   } catch (err) {
     console.error('Interview scheduling error:', err.message)
     res.status(400).json({ error: err.message || 'Unable to schedule interviews.' })

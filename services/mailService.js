@@ -223,30 +223,18 @@ function applicantText(application) {
 export async function sendApplicationEmails(application) {
   const companyRecipient = process.env.PLR_HR_EMAIL
 
-  if (!process.env.RESEND_API_KEY || !companyRecipient) {
-    console.warn('Application email skipped: RESEND_API_KEY or PLR_HR_EMAIL env values are missing.')
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('Application receipt email skipped: RESEND_API_KEY env value is missing.')
     return { skipped: true }
   }
 
   const name = fullName(application)
-  const type = applicantTypeLabel(application.applicantType)
-  const subjectType = application.applicantType === 'intern' ? 'INTERNSHIP' : 'FULL-TIME'
   const senderName = process.env.MAIL_FROM_NAME_CAREERS || 'PL Robotics Careers'
 
   await sendEmail({
     fromName: senderName,
-    to: companyRecipient,
-    replyTo: application.email,
-    subject: `${subjectType} | ${application.jobTitle} Application - ${name}`,
-    messageId: messageId(application, 'career-application'),
-    html: companyEmailHtml(application),
-    text: companyText(application),
-  })
-
-  await sendEmail({
-    fromName: senderName,
     to: application.email,
-    replyTo: companyRecipient,
+    replyTo: companyRecipient || undefined,
     subject: `APPLICATION RECEIVED | ${application.jobTitle} - ${name}`,
     messageId: messageId(application, 'career-receipt'),
     html: applicantEmailHtml(application),
