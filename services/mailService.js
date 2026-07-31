@@ -250,9 +250,9 @@ export async function sendInterviewScheduledEmail(application) {
   }
 
   const interview = application.interview
-  const dateTime = new Date(interview.startAt).toLocaleString('en-IN', {
-    timeZone: 'Asia/Kolkata', dateStyle: 'full', timeStyle: 'short',
-  })
+  // For candidate-facing email, show the interview date and the full 3:00–5:00 PM IST window
+  const dateOnly = new Date(interview.startAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' })
+  const dateTime = `${dateOnly} | 3:00–5:00 PM IST`
   const name = fullName(application)
   const senderName = process.env.MAIL_FROM_NAME_CAREERS || 'PL Robotics Careers'
   const rows = [
@@ -313,6 +313,70 @@ export async function sendInterviewAssignmentEmail(application, interviewer) {
       footer: 'This interview was assigned through the PL Robotics careers system.',
     }),
     text: ['PL Robotics interview assignment', '', ...rows.map(([label, value]) => `${label}: ${value}`)].join('\n'),
+  })
+}
+
+export async function sendInterviewCancelledEmail(application) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is required to send interview cancellation emails')
+  }
+
+  const interview = application.interview || {}
+  const dateOnly = interview.startAt ? new Date(interview.startAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' }) : ''
+  const senderName = process.env.MAIL_FROM_NAME_CAREERS || 'PL Robotics Careers'
+
+  const rows = [
+    ['Role', application.jobTitle],
+    ['Date', dateOnly],
+  ]
+
+  return sendEmail({
+    fromName: senderName,
+    to: application.email,
+    replyTo: process.env.PLR_HR_EMAIL,
+    subject: `INTERVIEW CANCELLED | ${application.jobTitle} - PL Robotics`,
+    messageId: messageId(application, 'interview-cancelled'),
+    html: emailShell({
+      eyebrow: 'Interview cancelled',
+      title: `Your PL Robotics interview has been cancelled`,
+      intro: `Hi ${escapeHtml(application.firstName || fullName(application))}, unfortunately your interview for ${escapeHtml(application.jobTitle)} has been cancelled.`,
+      body: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rows.map(([label, value]) => detailRow(label, value)).join('')}</table>
+        <p style="margin:22px 0 0;color:${brand.ink};font-size:15px;line-height:1.8;">We will contact you if the interview is rescheduled. If you have any questions, reply to this email.</p>`,
+      footer: 'Regards,<br><strong style="color:#1a1208;">PL Robotics Careers Team</strong>',
+    }),
+    text: [`Hi ${application.firstName || fullName(application)},`, '', `Your interview for ${application.jobTitle} has been cancelled.`, '', 'Regards,', 'PL Robotics Careers Team'].join('\n'),
+  })
+}
+
+export async function sendInterviewAssignmentCancelledEmail(application, interviewer) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is required to send interview cancellation emails')
+  }
+
+  const interview = application.interview || {}
+  const dateOnly = interview.startAt ? new Date(interview.startAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' }) : ''
+  const candidateName = fullName(application)
+  const senderName = process.env.MAIL_FROM_NAME_CAREERS || 'PL Robotics Careers'
+  const rows = [
+    ['Candidate', candidateName],
+    ['Role', application.jobTitle],
+    ['Date', dateOnly],
+  ]
+
+  return sendEmail({
+    fromName: senderName,
+    to: interviewer.email,
+    replyTo: application.email,
+    subject: `INTERVIEW CANCELLED | ${candidateName} — ${application.jobTitle}`,
+    messageId: messageId(application, 'interview-assignment-cancelled'),
+    html: emailShell({
+      eyebrow: 'Interview cancelled',
+      title: `Interview with ${escapeHtml(candidateName)} has been cancelled`,
+      intro: `The interview assigned to you has been cancelled.`,
+      body: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rows.map(([label, value]) => detailRow(label, value)).join('')}</table>`,
+      footer: 'This notification was generated automatically by the PL Robotics careers system.',
+    }),
+    text: ['Interview cancelled', '', ...rows.map(([label, value]) => `${label}: ${value}`)].join('\n'),
   })
 }
 

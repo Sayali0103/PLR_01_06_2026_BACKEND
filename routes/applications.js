@@ -5,7 +5,7 @@ import { interviewers } from '../config/interviewers.js'
 import { adminAuth } from '../middleware/auth.js'
 import { handleUploadError, uploadFields } from '../middleware/upload.js'
 import { appendApplicationToSheet } from '../googleSheets.js'
-import { sendApplicationEmails, sendInterviewScheduledEmail, sendInterviewAssignmentEmail } from '../services/mailService.js'
+import { sendApplicationEmails, sendInterviewScheduledEmail, sendInterviewAssignmentEmail, sendInterviewCancelledEmail, sendInterviewAssignmentCancelledEmail } from '../services/mailService.js'
 import { removeLocalUpload, uploadApplicationFileToDrive } from '../services/driveService.js'
 import { createInterviewCalendarEvent, deleteInterviewCalendarEvent } from '../services/calendarService.js'
 
@@ -243,6 +243,130 @@ router.post('/schedule-interviews', adminAuth, async (req, res) => {
   } catch (err) {
     console.error('Interview scheduling error:', err.message)
     res.status(400).json({ error: err.message || 'Unable to schedule interviews.' })
+  }
+})
+
+// Edit a single application's interview (reschedule or change interviewer)
+router.patch('/:id/edit-interview', adminAuth, async (req, res) => {
+  const { date, interviewerEmail } = req.body
+  if (!/^[\d]{4}-\d{2}-\d{2}$/.test(date || '') || !interviewerEmail) {
+    return res.status(400).json({ error: 'Provide a valid date and interviewer email.' })
+  }
+
+  try {
+    const application = await Application.findById(req.params.id)
+    if (!application) return res.status(404).json({ error: 'Application not found.' })
+
+    const interviewer = interviewers.find(p => p.email.toLowerCase() === interviewerEmail.toLowerCase())
+    if (!interviewer) return res.status(400).json({ error: 'Invalid interviewer email.' })
+
+    // Remove from any existing batch for this candidate
+    const oldBatch = await InterviewBatch.findOne({ applicationIds: application._id })
+    if (oldBatch) {
+      oldBatch.applicationIds = oldBatch.applicationIds.filter(id => id.toString() !== application._id.toString())
+      await oldBatch.save()
+    }
+
+    // Validate target date is a future Thursday or Sunday
+    const windowStart = new Date(`${date}T15:00:00+05:30`)
+    const weekday = new Date(`${date}T12:00:00+05:30`).getDay()
+    if (![0, 4].includes(weekday) || windowStart <= new Date()) {
+      return res.status(400).json({ error: 'Interviews must be scheduled for a future Thursday or Sunday.' })
+    }
+
+    // Find or create target batch and ensure capacity
+    let targetBatch = await InterviewBatch.findOne({ interviewDate: date })
+    const existingCount = targetBatch ? targetBatch.applicationIds.length : 0
+    if (existingCount >= 10) return res.status(409).json({ error: 'The interview slot for this date is already fully booked.' })
+
+    // Assign next available slot index
+    const totalSlots = 10
+    const slotLengthMs = (2 * 60 * 60 * 1000) / totalSlots
+    const slotIndex = existingCount
+    const startAt = new Date(windowStart.getTime() + slotIndex * slotLengthMs)
+    const endAt = new Date(startAt.getTime() + slotLengthMs)
+
+    // Create new calendar event
+    const calendar = await createInterviewCalendarEvent({ application, interviewer, startAt, endAt })
+
+    // Delete old calendar event if present
+    if (application.interview?.calendarEventId) {
+      await deleteInterviewCalendarEvent(application.interview.calendarEventId)
+    }
+
+    // Update application interview details
+    application.interview = {
+      startAt,
+      endAt,
+      timezone: 'Asia/Kolkata',
+      meetLink: calendar.meetLink,
+      calendarEventId: calendar.eventId,
+      interviewerName: interviewer.name,
+      interviewerEmail: interviewer.email,
+      status: 'scheduled',
+      scheduledAt: new Date(),
+    }
+    await application.save()
+
+    // Update or create batch record
+    if (targetBatch) {
+      targetBatch.applicationIds.push(application._id)
+      await targetBatch.save()
+    } else {
+      await InterviewBatch.create({ interviewDate: date, applicationIds: [application._id] })
+    }
+
+    // Notify candidate and interviewer
+    await Promise.allSettled([
+      sendInterviewScheduledEmail(application),
+      sendInterviewAssignmentEmail(application, interviewer),
+    ])
+
+    res.json({ message: 'Interview updated successfully' })
+  } catch (err) {
+    console.error('Edit interview error:', err.message)
+    res.status(400).json({ error: err.message || 'Unable to edit interview.' })
+  }
+})
+
+// Cancel an interview for a single application
+router.post('/:id/cancel-interview', adminAuth, async (req, res) => {
+  try {
+    const application = await Application.findById(req.params.id)
+    if (!application || application.interview?.status !== 'scheduled') return res.status(404).json({ error: 'Scheduled interview not found for this application.' })
+
+    const interviewer = { email: application.interview?.interviewerEmail, name: application.interview?.interviewerName }
+
+    // Delete calendar event
+    if (application.interview.calendarEventId) {
+      await deleteInterviewCalendarEvent(application.interview.calendarEventId)
+    }
+
+    // Mark as cancelled
+    application.interview = {
+      ...application.interview,
+      status: 'cancelled',
+      cancelledAt: new Date(),
+    }
+    await application.save()
+
+    // Remove from any batch that contains this application
+    const batch = await InterviewBatch.findOne({ applicationIds: application._id })
+    if (batch) {
+      batch.applicationIds = batch.applicationIds.filter(id => id.toString() !== application._id.toString())
+      await batch.save()
+    }
+
+    // Notify candidate and interviewer
+    await Promise.allSettled([
+      sendInterviewCancelledEmail(application),
+      interviewer?.email ? sendInterviewAssignmentCancelledEmail(application, interviewer) : Promise.resolve(),
+    ])
+
+    res.json({ message: 'Interview cancelled' })
+  } catch (err) {
+    console.error('Cancel interview error:', err.message)
+    res.status(400).json({ error: err.message || 'Unable to cancel interview.' })
   }
 })
 
