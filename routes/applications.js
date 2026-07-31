@@ -5,7 +5,7 @@ import { interviewers } from '../config/interviewers.js'
 import { adminAuth } from '../middleware/auth.js'
 import { handleUploadError, uploadFields } from '../middleware/upload.js'
 import { appendApplicationToSheet } from '../googleSheets.js'
-import { sendApplicationEmails, sendInterviewScheduledEmail, sendInterviewAssignmentEmail, sendInterviewCancelledEmail, sendInterviewAssignmentCancelledEmail } from '../services/mailService.js'
+import { sendApplicationEmails, sendInterviewScheduledEmail, sendInterviewAssignmentEmail, sendInterviewRescheduledEmail, sendInterviewAssignmentRescheduledEmail, sendInterviewCancelledEmail, sendInterviewAssignmentCancelledEmail } from '../services/mailService.js'
 import { removeLocalUpload, uploadApplicationFileToDrive } from '../services/driveService.js'
 import { createInterviewCalendarEvent, deleteInterviewCalendarEvent } from '../services/calendarService.js'
 
@@ -316,10 +316,10 @@ router.patch('/:id/edit-interview', adminAuth, async (req, res) => {
       await InterviewBatch.create({ interviewDate: date, applicationIds: [application._id] })
     }
 
-    // Notify candidate and interviewer
+    // Notify candidate and interviewer (reschedule)
     await Promise.allSettled([
-      sendInterviewScheduledEmail(application),
-      sendInterviewAssignmentEmail(application, interviewer),
+      sendInterviewRescheduledEmail(application),
+      sendInterviewAssignmentRescheduledEmail(application, interviewer),
     ])
 
     res.json({ message: 'Interview updated successfully' })

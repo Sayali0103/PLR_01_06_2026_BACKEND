@@ -279,6 +279,40 @@ export async function sendInterviewScheduledEmail(application) {
   })
 }
 
+export async function sendInterviewRescheduledEmail(application) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is required to send interview reschedule emails')
+  }
+
+  const interview = application.interview
+  const dateOnly = new Date(interview.startAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' })
+  const dateTime = `${dateOnly} | 3:00–5:00 PM IST`
+  const name = fullName(application)
+  const senderName = process.env.MAIL_FROM_NAME_CAREERS || 'PL Robotics Careers'
+  const rows = [
+    ['Role', application.jobTitle],
+    ['New date and time', `${dateTime}`],
+    ['Google Meet link', interview.meetLink],
+  ]
+
+  return sendEmail({
+    fromName: senderName,
+    to: application.email,
+    replyTo: process.env.PLR_HR_EMAIL,
+    subject: `INTERVIEW RESCHEDULED | ${application.jobTitle} - PL Robotics`,
+    messageId: messageId(application, 'interview-rescheduled'),
+    html: emailShell({
+      eyebrow: 'Interview rescheduled',
+      title: `Your PL Robotics interview has been rescheduled`,
+      intro: `Hi ${escapeHtml(application.firstName || name)}, your interview for ${escapeHtml(application.jobTitle)} has been rescheduled.`,
+      body: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rows.map(([label, value]) => detailRow(label, value)).join('')}</table>
+        <p style="margin:22px 0 0;color:${brand.ink};font-size:15px;line-height:1.8;">Please be available during the full 3:00–5:00 PM IST window. Join using the Google Meet link when prompted.</p>`,
+      footer: 'Regards,<br><strong style="color:#1a1208;">PL Robotics Careers Team</strong>',
+    }),
+    text: [`Hi ${application.firstName || name},`, '', `Your interview for ${application.jobTitle} has been rescheduled to ${dateTime}.`, `Google Meet: ${interview.meetLink}`, '', 'Regards,', 'PL Robotics Careers Team'].join('\n'),
+  })
+}
+
 export async function sendInterviewAssignmentEmail(application, interviewer) {
   if (!process.env.RESEND_API_KEY) {
     throw new Error('RESEND_API_KEY is required to send interview assignments')
@@ -313,6 +347,41 @@ export async function sendInterviewAssignmentEmail(application, interviewer) {
       footer: 'This interview was assigned through the PL Robotics careers system.',
     }),
     text: ['PL Robotics interview assignment', '', ...rows.map(([label, value]) => `${label}: ${value}`)].join('\n'),
+  })
+}
+
+export async function sendInterviewAssignmentRescheduledEmail(application, interviewer) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is required to send interview assignment reschedule emails')
+  }
+
+  const interview = application.interview
+  const candidateName = fullName(application)
+  const dateTime = new Date(interview.startAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' })
+  const senderName = process.env.MAIL_FROM_NAME_CAREERS || 'PL Robotics Careers'
+  const rows = [
+    ['Candidate', candidateName],
+    ['Role', application.jobTitle],
+    ['New date and time', `${dateTime} | 3:00–5:00 PM IST`],
+    ['Candidate email', application.email],
+    ['Candidate phone', application.phone],
+    ['Google Meet link', interview.meetLink],
+  ]
+
+  return sendEmail({
+    fromName: senderName,
+    to: interviewer.email,
+    replyTo: application.email,
+    subject: `INTERVIEW REASSIGNED (RESCHEDULED) | ${candidateName} — ${application.jobTitle}`,
+    messageId: messageId(application, 'interview-assignment-rescheduled'),
+    html: emailShell({
+      eyebrow: 'Interview reassigned',
+      title: `Interview updated: ${candidateName}`,
+      intro: `The interview for ${escapeHtml(candidateName)} has been rescheduled. Please note the updated time below.`,
+      body: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rows.map(([label, value]) => detailRow(label, value)).join('')}</table>`,
+      footer: 'This interview update was generated automatically by the PL Robotics careers system.',
+    }),
+    text: ['Interview update', '', ...rows.map(([label, value]) => `${label}: ${value}`)].join('\n'),
   })
 }
 
