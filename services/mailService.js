@@ -250,9 +250,10 @@ export async function sendInterviewScheduledEmail(application) {
   }
 
   const interview = application.interview
-  // For candidate-facing email, show the interview date and the full 3:00–5:00 PM IST window
   const dateOnly = new Date(interview.startAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' })
-  const dateTime = `${dateOnly} | 3:00–5:00 PM IST`
+  const startTime = new Date(interview.startAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' })
+  const endTime = new Date(interview.endAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' })
+  const dateTime = `${dateOnly} | ${startTime} to ${endTime} IST`
   const name = fullName(application)
   const senderName = process.env.MAIL_FROM_NAME_CAREERS || 'PL Robotics Careers'
   const rows = [
@@ -272,7 +273,7 @@ export async function sendInterviewScheduledEmail(application) {
       title: `Your PL Robotics interview is confirmed`,
       intro: `Hi ${escapeHtml(application.firstName || name)}, your interview for ${escapeHtml(application.jobTitle)} has been scheduled.`,
       body: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rows.map(([label, value]) => detailRow(label, value)).join('')}</table>
-        <p style="margin:22px 0 0;color:${brand.ink};font-size:15px;line-height:1.8;">Please join using the Google Meet link a few minutes before your scheduled time.</p>`,
+        <p style="margin:22px 0 0;color:${brand.ink};font-size:15px;line-height:1.8;">Please join using the Google Meet link a few minutes before your scheduled time and be available for the full selected slot.</p>`,
       footer: 'Regards,<br><strong style="color:#1a1208;">PL Robotics Careers Team</strong>',
     }),
     text: [`Hi ${application.firstName || name},`, '', `Your interview for ${application.jobTitle} is scheduled for ${dateTime} IST.`, `Google Meet: ${interview.meetLink}`, '', 'Regards,', 'PL Robotics Careers Team'].join('\n'),
@@ -286,8 +287,9 @@ export async function sendInterviewRescheduledEmail(application) {
 
   const interview = application.interview
   const dateOnly = new Date(interview.startAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' })
-  const dateTime = `${dateOnly} | 3:00–5:00 PM IST`
-  const name = fullName(application)
+  const startTime = new Date(interview.startAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' })
+  const endTime = new Date(interview.endAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' })
+  const dateTime = `${dateOnly} | ${startTime} to ${endTime} IST`
   const senderName = process.env.MAIL_FROM_NAME_CAREERS || 'PL Robotics Careers'
   const rows = [
     ['Role', application.jobTitle],
@@ -306,7 +308,7 @@ export async function sendInterviewRescheduledEmail(application) {
       title: `Your PL Robotics interview has been rescheduled`,
       intro: `Hi ${escapeHtml(application.firstName || name)}, your interview for ${escapeHtml(application.jobTitle)} has been rescheduled.`,
       body: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rows.map(([label, value]) => detailRow(label, value)).join('')}</table>
-        <p style="margin:22px 0 0;color:${brand.ink};font-size:15px;line-height:1.8;">Please be available during the full 3:00–5:00 PM IST window. Join using the Google Meet link when prompted.</p>`,
+        <p style="margin:22px 0 0;color:${brand.ink};font-size:15px;line-height:1.8;">Please be available for the full selected time slot. Join using the Google Meet link when prompted.</p>`,
       footer: 'Regards,<br><strong style="color:#1a1208;">PL Robotics Careers Team</strong>',
     }),
     text: [`Hi ${application.firstName || name},`, '', `Your interview for ${application.jobTitle} has been rescheduled to ${dateTime}.`, `Google Meet: ${interview.meetLink}`, '', 'Regards,', 'PL Robotics Careers Team'].join('\n'),
@@ -357,12 +359,15 @@ export async function sendInterviewAssignmentRescheduledEmail(application, inter
 
   const interview = application.interview
   const candidateName = fullName(application)
-  const dateTime = new Date(interview.startAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' })
+  const dateOnly = new Date(interview.startAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' })
+  const startTime = new Date(interview.startAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' })
+  const endTime = new Date(interview.endAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' })
+  const dateTime = `${dateOnly} | ${startTime} to ${endTime} IST`
   const senderName = process.env.MAIL_FROM_NAME_CAREERS || 'PL Robotics Careers'
   const rows = [
     ['Candidate', candidateName],
     ['Role', application.jobTitle],
-    ['New date and time', `${dateTime} | 3:00–5:00 PM IST`],
+    ['New date and time', `${dateTime}`],
     ['Candidate email', application.email],
     ['Candidate phone', application.phone],
     ['Google Meet link', interview.meetLink],

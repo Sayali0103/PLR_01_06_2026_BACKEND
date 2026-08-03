@@ -130,12 +130,18 @@ router.get('/interviewers', adminAuth, (req, res) => {
 
 // Schedule a single Thursday/Sunday interview batch. The 3–5 PM IST window is shared evenly.
 router.post('/schedule-interviews', adminAuth, async (req, res) => {
-  const { applicationIds, date, assignments } = req.body
+  const { applicationIds, date, startTime, durationHours, assignments } = req.body
   if (!Array.isArray(applicationIds) || applicationIds.length < 1 || applicationIds.length > 10) {
     return res.status(400).json({ error: 'Select between 1 and 10 candidates.' })
   }
   if (new Set(applicationIds).size !== applicationIds.length || !/^\d{4}-\d{2}-\d{2}$/.test(date || '')) {
     return res.status(400).json({ error: 'Provide unique candidates and a valid interview date.' })
+  }
+  if (!/^\d{2}:\d{2}$/.test(startTime || '')) {
+    return res.status(400).json({ error: 'Provide a valid interview start time.' })
+  }
+  if (![1, 2].includes(Number(durationHours))) {
+    return res.status(400).json({ error: 'Choose a 1-hour or 2-hour interview duration.' })
   }
   if (!Array.isArray(assignments) || assignments.length !== applicationIds.length) {
     return res.status(400).json({ error: 'Assign an interviewer to every candidate.' })
@@ -154,13 +160,10 @@ router.post('/schedule-interviews', adminAuth, async (req, res) => {
     return res.status(400).json({ error: 'One or more selected interviewers are invalid.' })
   }
 
-  const dayStart = new Date(`${date}T00:00:00+05:30`)
-  const dayEnd = new Date(`${date}T23:59:59.999+05:30`)
-  const weekday = new Date(`${date}T12:00:00+05:30`).getDay()
-  const windowStart = new Date(`${date}T15:00:00+05:30`)
+  const slotStart = new Date(`${date}T${startTime}:00+05:30`)
   const now = new Date()
-  if (![0, 4].includes(weekday) || windowStart <= now) {
-    return res.status(400).json({ error: 'Interviews must be scheduled for a future Thursday or Sunday.' })
+  if (slotStart <= now) {
+    return res.status(400).json({ error: 'Interviews must be scheduled for a future date and time.' })
   }
 
   try {
@@ -191,14 +194,13 @@ router.post('/schedule-interviews', adminAuth, async (req, res) => {
       interviewer: interviewerByApplicationId.get(id),
     }))
 
-    const totalSlots = 10
-    const slotLengthMs = (2 * 60 * 60 * 1000) / totalSlots
+    const slotLengthMs = Number(durationHours) * 60 * 60 * 1000
     const createdEvents = []
 
     try {
       for (let index = 0; index < ordered.length; index += 1) {
         const slotIndex = existingCount + index
-        const startAt = new Date(windowStart.getTime() + slotIndex * slotLengthMs)
+        const startAt = new Date(slotStart.getTime() + slotIndex * slotLengthMs)
         const endAt = new Date(startAt.getTime() + slotLengthMs)
         const { application, interviewer } = ordered[index]
         const calendar = await createInterviewCalendarEvent({ application, interviewer, startAt, endAt })
@@ -248,9 +250,12 @@ router.post('/schedule-interviews', adminAuth, async (req, res) => {
 
 // Edit a single application's interview (reschedule or change interviewer)
 router.patch('/:id/edit-interview', adminAuth, async (req, res) => {
-  const { date, interviewerEmail } = req.body
-  if (!/^[\d]{4}-\d{2}-\d{2}$/.test(date || '') || !interviewerEmail) {
-    return res.status(400).json({ error: 'Provide a valid date and interviewer email.' })
+  const { date, startTime, durationHours, interviewerEmail } = req.body
+  if (!/^[\d]{4}-\d{2}-\d{2}$/.test(date || '') || !/^\d{2}:\d{2}$/.test(startTime || '') || !interviewerEmail) {
+    return res.status(400).json({ error: 'Provide a valid date, start time, and interviewer email.' })
+  }
+  if (![1, 2].includes(Number(durationHours))) {
+    return res.status(400).json({ error: 'Choose a 1-hour or 2-hour interview duration.' })
   }
 
   try {
@@ -267,11 +272,9 @@ router.patch('/:id/edit-interview', adminAuth, async (req, res) => {
       await oldBatch.save()
     }
 
-    // Validate target date is a future Thursday or Sunday
-    const windowStart = new Date(`${date}T15:00:00+05:30`)
-    const weekday = new Date(`${date}T12:00:00+05:30`).getDay()
-    if (![0, 4].includes(weekday) || windowStart <= new Date()) {
-      return res.status(400).json({ error: 'Interviews must be scheduled for a future Thursday or Sunday.' })
+    const slotStart = new Date(`${date}T${startTime}:00+05:30`)
+    if (slotStart <= new Date()) {
+      return res.status(400).json({ error: 'Interviews must be scheduled for a future date and time.' })
     }
 
     // Find or create target batch and ensure capacity
@@ -279,11 +282,9 @@ router.patch('/:id/edit-interview', adminAuth, async (req, res) => {
     const existingCount = targetBatch ? targetBatch.applicationIds.length : 0
     if (existingCount >= 10) return res.status(409).json({ error: 'The interview slot for this date is already fully booked.' })
 
-    // Assign next available slot index
-    const totalSlots = 10
-    const slotLengthMs = (2 * 60 * 60 * 1000) / totalSlots
+    const slotLengthMs = Number(durationHours) * 60 * 60 * 1000
     const slotIndex = existingCount
-    const startAt = new Date(windowStart.getTime() + slotIndex * slotLengthMs)
+    const startAt = new Date(slotStart.getTime() + slotIndex * slotLengthMs)
     const endAt = new Date(startAt.getTime() + slotLengthMs)
 
     // Create new calendar event
