@@ -38,7 +38,10 @@ const ApplicationSchema = new mongoose.Schema(
       endAt: { type: Date },
       timezone: { type: String, default: 'Asia/Kolkata' },
       meetLink: { type: String, trim: true },
-      calendarEventId: { type: String, trim: true },
+      interviewers: [{
+        name: { type: String, trim: true },
+        email: { type: String, trim: true, lowercase: true },
+      }],
       interviewerName: { type: String, trim: true },
       interviewerEmail: { type: String, trim: true, lowercase: true },
       status: {
