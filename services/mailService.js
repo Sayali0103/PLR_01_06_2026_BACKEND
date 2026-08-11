@@ -86,6 +86,30 @@ function detailRow(label, value) {
   `
 }
 
+function interviewInstructionsAndGuidelines() {
+  return `
+    <div style="margin-top:28px;padding-top:28px;border-top:2px solid ${brand.line};">
+      <h2 style="margin:0 0 18px;color:${brand.ink};font-size:18px;font-weight:800;line-height:1.3;">Important Instructions</h2>
+      <ul style="margin:0 0 24px;padding-left:24px;color:${brand.ink};font-size:14px;line-height:1.8;">
+        <li style="margin-bottom:12px;">Please join the meeting 10-15 minutes before the scheduled time.</li>
+        <li style="margin-bottom:12px;">The total duration of the interview process is 2 hours; please be available for the full duration.</li>
+        <li style="margin-bottom:12px;">After joining the meeting, please remain in the waiting room until the host admits you for the interview.</li>
+        <li style="margin-bottom:12px;">Ensure your camera remains switched ON during the entire interview.</li>
+        <li style="margin-bottom:12px;">Please ensure a stable internet connection to avoid any disruptions.</li>
+        <li style="margin-bottom:12px;">It is recommended to be seated in a quiet and well-lit environment.</li>
+        <li style="margin-bottom:0;">Please note that this interview schedule is final and will not be rescheduled.</li>
+      </ul>
+
+      <h2 style="margin:28px 0 18px;color:${brand.ink};font-size:18px;font-weight:800;line-height:1.3;">Preparation Guidelines</h2>
+      <ul style="margin:0 0 0;padding-left:24px;color:${brand.ink};font-size:14px;line-height:1.8;">
+        <li style="margin-bottom:12px;">Be prepared to discuss your previous academic or project work in detail.</li>
+        <li style="margin-bottom:12px;">Keep relevant documents, project materials, or code repositories readily accessible.</li>
+        <li style="margin-bottom:0;">Ensure your system is set up with a Linux environment for any potential technical or problem-solving assessments, if applicable.</li>
+      </ul>
+    </div>
+  `
+}
+
 function emailShell({ eyebrow, title, intro, body, footer }) {
   return `
     <!doctype html>
@@ -262,6 +286,22 @@ export async function sendInterviewScheduledEmail(application) {
     ['Google Meet link', interview.meetLink],
   ]
 
+  const textInstructions = [
+    'Important Instructions:',
+    '• Please join the meeting 10-15 minutes before the scheduled time.',
+    '• The total duration of the interview process is 2 hours; please be available for the full duration.',
+    '• After joining the meeting, please remain in the waiting room until the host admits you for the interview.',
+    '• Ensure your camera remains switched ON during the entire interview.',
+    '• Please ensure a stable internet connection to avoid any disruptions.',
+    '• It is recommended to be seated in a quiet and well-lit environment.',
+    '• Please note that this interview schedule is final and will not be rescheduled.',
+    '',
+    'Preparation Guidelines:',
+    '• Be prepared to discuss your previous academic or project work in detail.',
+    '• Keep relevant documents, project materials, or code repositories readily accessible.',
+    '• Ensure your system is set up with a Linux environment for any potential technical or problem-solving assessments, if applicable.',
+  ]
+
   return sendEmail({
     fromName: senderName,
     to: application.email,
@@ -272,11 +312,10 @@ export async function sendInterviewScheduledEmail(application) {
       eyebrow: 'Interview scheduled',
       title: `Your PL Robotics interview is confirmed`,
       intro: `Hi ${escapeHtml(application.firstName || name)}, your interview for ${escapeHtml(application.jobTitle)} has been scheduled.`,
-      body: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rows.map(([label, value]) => detailRow(label, value)).join('')}</table>
-        <p style="margin:22px 0 0;color:${brand.ink};font-size:15px;line-height:1.8;">Please join using the Google Meet link a few minutes before your scheduled time and be available for the full selected slot.</p>`,
+      body: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rows.map(([label, value]) => detailRow(label, value)).join('')}</table>${interviewInstructionsAndGuidelines()}`,
       footer: 'Regards,<br><strong style="color:#1a1208;">PL Robotics Careers Team</strong>',
     }),
-    text: [`Hi ${application.firstName || name},`, '', `Your interview for ${application.jobTitle} is scheduled for ${dateTime} IST.`, `Google Meet: ${interview.meetLink}`, '', 'Regards,', 'PL Robotics Careers Team'].join('\n'),
+    text: [`Hi ${application.firstName || name},`, '', `Your interview for ${application.jobTitle} is scheduled for ${dateTime} IST.`, `Google Meet: ${interview.meetLink}`, '', ...textInstructions, '', 'We look forward to interacting with you and wish you the very best for the interview.', '', 'Regards,', 'PL Robotics Careers Team'].join('\n'),
   })
 }
 
@@ -297,6 +336,22 @@ export async function sendInterviewRescheduledEmail(application) {
     ['Google Meet link', interview.meetLink],
   ]
 
+  const textInstructions = [
+    'Important Instructions:',
+    '• Please join the meeting 10-15 minutes before the scheduled time.',
+    '• The total duration of the interview process is 2 hours; please be available for the full duration.',
+    '• After joining the meeting, please remain in the waiting room until the host admits you for the interview.',
+    '• Ensure your camera remains switched ON during the entire interview.',
+    '• Please ensure a stable internet connection to avoid any disruptions.',
+    '• It is recommended to be seated in a quiet and well-lit environment.',
+    '• Please note that this interview schedule is final and will not be rescheduled.',
+    '',
+    'Preparation Guidelines:',
+    '• Be prepared to discuss your previous academic or project work in detail.',
+    '• Keep relevant documents, project materials, or code repositories readily accessible.',
+    '• Ensure your system is set up with a Linux environment for any potential technical or problem-solving assessments, if applicable.',
+  ]
+
   return sendEmail({
     fromName: senderName,
     to: application.email,
@@ -307,11 +362,10 @@ export async function sendInterviewRescheduledEmail(application) {
       eyebrow: 'Interview rescheduled',
       title: `Your PL Robotics interview has been rescheduled`,
       intro: `Hi ${escapeHtml(application.firstName || name)}, your interview for ${escapeHtml(application.jobTitle)} has been rescheduled.`,
-      body: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rows.map(([label, value]) => detailRow(label, value)).join('')}</table>
-        <p style="margin:22px 0 0;color:${brand.ink};font-size:15px;line-height:1.8;">Please be available for the full selected time slot. Join using the Google Meet link when prompted.</p>`,
+      body: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${rows.map(([label, value]) => detailRow(label, value)).join('')}</table>${interviewInstructionsAndGuidelines()}`,
       footer: 'Regards,<br><strong style="color:#1a1208;">PL Robotics Careers Team</strong>',
     }),
-    text: [`Hi ${application.firstName || name},`, '', `Your interview for ${application.jobTitle} has been rescheduled to ${dateTime}.`, `Google Meet: ${interview.meetLink}`, '', 'Regards,', 'PL Robotics Careers Team'].join('\n'),
+    text: [`Hi ${application.firstName || name},`, '', `Your interview for ${application.jobTitle} has been rescheduled to ${dateTime}.`, `Google Meet: ${interview.meetLink}`, '', ...textInstructions, '', 'We look forward to interacting with you and wish you the very best for the interview.', '', 'Regards,', 'PL Robotics Careers Team'].join('\n'),
   })
 }
 
