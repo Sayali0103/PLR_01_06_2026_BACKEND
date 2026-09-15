@@ -6,6 +6,71 @@ dotenv.config()
 
 const jobs = [
   {
+    title: 'Human Resources',
+    dept: 'Talent Acquisition Team',
+    location: 'Pune, India',
+    positionType: 'Full time',
+    overview:
+      'Join P.L. Robotics, an emerging robotics technology company building advanced industrial automation solutions for Indian manufacturing. You will work with the Talent Acquisition Team to support recruitment, HR operations, employee engagement, and people initiatives while collaborating with engineers and cross-functional teams building the future of robotics. This is an opportunity to gain practical experience in a fast-growing technology and manufacturing environment while helping create a strong, positive workplace culture.',
+    responsibilities: [
+      'Assist in sourcing candidates through LinkedIn, job portals, and other recruitment platforms.',
+      'Post and manage job openings across relevant recruitment channels.',
+      'Screen resumes and applications based on job requirements.',
+      'Coordinate and schedule candidate interviews with hiring managers.',
+      'Communicate with candidates regarding interview schedules, requirements, and follow-ups.',
+      'Maintain and update candidate databases, recruitment trackers, and hiring records.',
+      'Assist with employee onboarding and joining formalities.',
+      'Maintain and organize employee records and HR documentation.',
+      'Support day-to-day HR operations and administrative activities.',
+      'Assist in preparing HR reports, trackers, and other HR-related documentation.',
+      'Support employee engagement activities, team events, celebrations, and workplace initiatives.',
+      'Assist in coordinating employee training and development programs.',
+      'Collect and maintain training and employee feedback records.',
+      'Support internal HR communications and announcements.',
+      'Assist in implementing HR policies, processes, and initiatives.',
+      'Coordinate with different departments to understand and support their recruitment and people-related requirements.',
+      'Contribute ideas and initiatives to improve employee experience and workplace culture.',
+      'Support the HR team in building a positive, collaborative, and engaging work environment.',
+    ],
+    requiredSkills: [
+      'Strong interest in Human Resources, recruitment, and people management.',
+      'Good written and verbal communication skills.',
+      'Strong interpersonal and relationship-building skills.',
+      'Good organizational and time-management skills.',
+      'Ability to manage multiple tasks and coordinate effectively.',
+      'Basic understanding of recruitment and selection processes.',
+      'Proficiency in Microsoft Office, particularly Excel, Word, and PowerPoint.',
+      'Strong attention to detail and ability to maintain accurate records.',
+      'Professional communication skills for interacting with candidates and employees.',
+      'Familiarity with LinkedIn, job portals, and candidate sourcing is an advantage.',
+      'Basic knowledge of HRMS, ATS, or other HR tools is a plus.',
+      'Proactive, positive, and learning-oriented approach.',
+      'Ability to work effectively in a fast-paced, on-site work environment.',
+    ],
+    educationRequirements: [
+      'Bachelor degree or currently pursuing a degree in Human Resources, Business Administration, Management, Psychology, or a related field.',
+      'Fresh graduates and candidates with 0-1 year of experience are welcome to apply.',
+      'Candidates must be comfortable working on-site at Bhosari, Pune.',
+    ],
+    additionalSkills: [
+      'Previous internship, academic, or project experience in Human Resources or recruitment is an advantage.',
+      'Interest in recruitment, HR operations, employee engagement, and talent management.',
+      'Working knowledge of Microsoft Office or Google Workspace.',
+      'Exposure to LinkedIn, job portals, Canva, HRMS, or ATS platforms is an advantage.',
+      'Ability to work independently and collaborate effectively with HR and cross-functional teams.',
+      'Exposure to a startup, technology, manufacturing, or engineering environment is an advantage.',
+    ],
+    whyJoin: [
+      'Based on your performance during the internship, you may be considered for full-time employment with P.L. Robotics Pvt. Ltd.',
+      'Work with a collaborative team and contribute to building strong people practices at an emerging robotics company.',
+    ],
+    tags: ['Recruitment', 'HR Operations', 'Employee Engagement', 'Talent Acquisition', 'People Management'],
+    applyInternUrl: 'https://plrobotics.in/careers',
+    applyJobUrl: 'https://plrobotics.in/careers',
+    isPaid: true,
+    isActive: true,
+  },
+  {
     title: 'Electronics Engineer',
     dept: 'Research & Development',
     location: 'Pune, India',
@@ -231,11 +296,15 @@ async function seed() {
     await mongoose.connect(process.env.MONGO_URI)
     console.log('✅ Connected to MongoDB')
 
-    await Job.deleteMany({})
-    console.log('🗑️  Cleared existing jobs')
+    const internship = jobs.find(job => job.title === 'Human Resources')
+    const existingInternship = await Job.findOne({
+      title: { $in: ['Human Resources Intern', internship.title] },
+    })
+    const result = existingInternship
+      ? await Job.updateOne({ _id: existingInternship._id }, { $set: internship })
+      : await Job.updateOne({ title: internship.title }, { $set: internship }, { upsert: true })
 
-    const inserted = await Job.insertMany(jobs)
-    console.log(`✅ Seeded ${inserted.length} jobs successfully`)
+    console.log(result.upsertedCount ? '✅ Added Human Resources posting' : '✅ Updated Human Resources posting')
 
     mongoose.disconnect()
     console.log('👋 Disconnected')
