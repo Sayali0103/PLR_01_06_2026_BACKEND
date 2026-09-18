@@ -10,6 +10,14 @@ import { sendApplicationEmails, sendInterviewScheduledEmail, sendInterviewAssign
 import { removeLocalUpload, uploadApplicationFileToDrive } from '../services/driveService.js'
 
 const router = express.Router()
+const DAILY_INTERVIEW_LIMIT_PER_ROLE = 10
+
+function roleCapacityError(roleKey, scheduledCount, requestedCount = 1) {
+  const remaining = Math.max(0, DAILY_INTERVIEW_LIMIT_PER_ROLE - scheduledCount)
+  return requestedCount > remaining
+    ? `Only ${remaining} ${roleKey} interview slot(s) remain for this date.`
+    : null
+}
 
 async function sendApplicationEmailsSafely(application) {
   try {
@@ -131,8 +139,8 @@ router.get('/interviewers', adminAuth, (req, res) => {
 // Schedule a single Thursday/Sunday interview batch. The 3–5 PM IST window is fixed for every candidate.
 router.post('/schedule-interviews', adminAuth, async (req, res) => {
   const { applicationIds, date, assignments } = req.body
-  if (!Array.isArray(applicationIds) || applicationIds.length < 1 || applicationIds.length > 10) {
-    return res.status(400).json({ error: 'Select between 1 and 10 candidates.' })
+  if (!Array.isArray(applicationIds) || applicationIds.length < 1) {
+    return res.status(400).json({ error: 'Select at least one candidate.' })
   }
   if (new Set(applicationIds).size !== applicationIds.length || !/^\d{4}-\d{2}-\d{2}$/.test(date || '')) {
     return res.status(400).json({ error: 'Provide unique candidates and a valid interview date.' })
@@ -183,16 +191,29 @@ router.post('/schedule-interviews', adminAuth, async (req, res) => {
 
     const existingBatch = await InterviewBatch.findOne({ interviewDate: date })
     const existingIds = existingBatch ? existingBatch.applicationIds.map(id => id.toString()) : []
-    const existingCount = existingIds.length
-
-    if (existingCount >= 10) {
-      return res.status(409).json({ error: 'The interview slot for this date is already fully booked.' })
-    }
-    if (existingCount + applicationIds.length > 10) {
-      return res.status(409).json({ error: `Only ${10 - existingCount} candidate slot(s) remain for this date.` })
-    }
     if (existingBatch && applicationIds.some(id => existingIds.includes(id))) {
       return res.status(400).json({ error: 'One or more selected candidates are already scheduled for this date.' })
+    }
+
+    const requestedByRole = new Map()
+    for (const application of applications) {
+      const roleKey = getRoleKey(application.jobTitle)
+      if (!roleKey) return res.status(400).json({ error: `Unsupported role for ${application.jobTitle}.` })
+      requestedByRole.set(roleKey, (requestedByRole.get(roleKey) || 0) + 1)
+    }
+
+    const scheduledOnDate = await Application.find({
+      'interview.status': 'scheduled',
+      'interview.startAt': { $gte: slotStart, $lt: new Date(slotStart.getTime() + 24 * 60 * 60 * 1000) },
+    }).select('jobTitle')
+    const scheduledByRole = new Map()
+    for (const application of scheduledOnDate) {
+      const roleKey = getRoleKey(application.jobTitle)
+      if (roleKey) scheduledByRole.set(roleKey, (scheduledByRole.get(roleKey) || 0) + 1)
+    }
+    for (const [roleKey, requestedCount] of requestedByRole) {
+      const error = roleCapacityError(roleKey, scheduledByRole.get(roleKey) || 0, requestedCount)
+      if (error) return res.status(409).json({ error })
     }
 
     const candidateAssignments = applicationIds.map(id => ({
@@ -309,23 +330,29 @@ router.patch('/:id/edit-interview', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'Interviews must be scheduled for a future date.' })
     }
 
-    // Remove from any existing batch for this candidate
+    const meetLink = getRoleMeetLink(application.jobTitle)
+    if (!meetLink) {
+      return res.status(400).json({ error: `Unsupported role for ${application.jobTitle}.` })
+    }
+
+    const scheduledOnDate = await Application.find({
+      'interview.status': 'scheduled',
+      'interview.startAt': { $gte: slotStart, $lt: new Date(slotStart.getTime() + 24 * 60 * 60 * 1000) },
+    }).select('_id jobTitle')
+    const roleScheduledCount = scheduledOnDate.filter(candidate =>
+      getRoleKey(candidate.jobTitle) === roleKey && candidate._id.toString() !== application._id.toString()
+    ).length
+    const capacityError = roleCapacityError(roleKey, roleScheduledCount)
+    if (capacityError) return res.status(409).json({ error: capacityError })
+
+    // Only remove the old batch after the new role's capacity has been confirmed.
     const oldBatch = await InterviewBatch.findOne({ applicationIds: application._id })
     if (oldBatch) {
       oldBatch.applicationIds = oldBatch.applicationIds.filter(id => id.toString() !== application._id.toString())
       await oldBatch.save()
     }
 
-    let targetBatch = await InterviewBatch.findOne({ interviewDate: date })
-    const existingCount = targetBatch ? targetBatch.applicationIds.length : 0
-    if (existingCount >= 10) {
-      return res.status(409).json({ error: 'The interview slot for this date is already fully booked.' })
-    }
-
-    const meetLink = getRoleMeetLink(application.jobTitle)
-    if (!meetLink) {
-      return res.status(400).json({ error: `Unsupported role for ${application.jobTitle}.` })
-    }
+    const targetBatch = await InterviewBatch.findOne({ interviewDate: date })
 
     application.interview = {
       startAt: slotStart,
