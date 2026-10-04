@@ -1,7 +1,7 @@
 import express from 'express'
 import Employee from '../models/Employee.js'
 import Attendance from '../models/Attendance.js'
-import { adminAuth } from '../middleware/auth.js'
+import { adminAuth, adminOnly } from '../middleware/auth.js'
 
 const router = express.Router()
 const START_DATE = '2026-09-01'
@@ -40,7 +40,7 @@ router.get('/:id/attendance', async (req, res) => {
   }
 })
 
-router.get('/', adminAuth, async (_req, res) => {
+router.get('/', adminAuth, adminOnly, async (_req, res) => {
   try {
     const employees = await Employee.find().sort({ name: 1 })
     res.json(employees)
@@ -49,7 +49,7 @@ router.get('/', adminAuth, async (_req, res) => {
   }
 })
 
-router.post('/', adminAuth, async (req, res) => {
+router.post('/', adminAuth, adminOnly, async (req, res) => {
   try {
     const name = String(req.body.name || '').trim()
     const email = String(req.body.email || '').trim().toLowerCase()
@@ -61,7 +61,7 @@ router.post('/', adminAuth, async (req, res) => {
   }
 })
 
-router.get('/:id/admin-attendance', adminAuth, async (req, res) => {
+router.get('/:id/admin-attendance', adminAuth, adminOnly, async (req, res) => {
   try {
     const attendance = await Attendance.find({ employeeId: req.params.id }).sort({ date: 1 })
     res.json(attendance)
@@ -70,7 +70,7 @@ router.get('/:id/admin-attendance', adminAuth, async (req, res) => {
   }
 })
 
-router.put('/:id/attendance/:date', adminAuth, async (req, res) => {
+router.put('/:id/attendance/:date', adminAuth, adminOnly, async (req, res) => {
   const { date } = req.params
   const { status } = req.body
   if (!validDate(date) || date < START_DATE || isHoliday(date)) {
@@ -93,7 +93,7 @@ router.put('/:id/attendance/:date', adminAuth, async (req, res) => {
   }
 })
 
-router.delete('/:id/attendance/:date', adminAuth, async (req, res) => {
+router.delete('/:id/attendance/:date', adminAuth, adminOnly, async (req, res) => {
   try {
     await Attendance.deleteOne({ employeeId: req.params.id, date: req.params.date })
     res.json({ message: 'Attendance cleared' })
