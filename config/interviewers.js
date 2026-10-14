@@ -4,4 +4,5 @@ export const interviewers = [
   { name: 'Pradyumn Chiwhane', email: 'pradyumnchiwhane53@gmail.com' },
   { name: 'Pratik Yadav', email: 'ypratik961@gmail.com' },
   { name: 'Shantanu Dhotkar', email: 'shantanudhotkar1@gmail.com' },
+  { name: 'Saksham Savant', email: 'sakshamsavant123@gmail.com' },
 ]
