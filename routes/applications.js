@@ -6,11 +6,43 @@ import { getRoleMeetLink, getRoleKey } from '../config/meetLinks.js'
 import { adminAuth } from '../middleware/auth.js'
 import { handleUploadError, uploadFields } from '../middleware/upload.js'
 import { appendApplicationToSheet } from '../googleSheets.js'
-import { sendApplicationEmails, sendInterviewScheduledEmail, sendInterviewAssignmentEmail, sendInterviewRescheduledEmail, sendInterviewAssignmentRescheduledEmail, sendInterviewCancelledEmail, sendInterviewAssignmentCancelledEmail } from '../services/mailService.js'
+import { sendApplicationEmails, sendInterviewScheduledEmail, sendInterviewAssignmentEmail, sendInterviewRescheduledEmail, sendInterviewAssignmentRescheduledEmail, sendInterviewCancelledEmail, sendInterviewAssignmentCancelledEmail, sendInterviewRoundEmail } from '../services/mailService.js'
 import { removeLocalUpload, uploadApplicationFileToDrive } from '../services/driveService.js'
 
 const router = express.Router()
 const DAILY_INTERVIEW_LIMIT_PER_ROLE = 10
+
+router.post('/send-interview-round-email', adminAuth, async (req, res) => {
+  const candidates = Array.isArray(req.body.candidates) ? req.body.candidates : [{ name: req.body.name, email: req.body.email }]
+  const role = String(req.body.role || '').trim()
+  const date = String(req.body.date || '').trim()
+  const time = String(req.body.time || '').trim()
+  const requestedMode = String(req.body.mode || '').trim()
+  const mode = requestedMode === 'offline' ? 'in-person' : requestedMode
+  const details = String(req.body.details || '').trim()
+  const meetingLink = String(req.body.meetingLink || '').trim()
+  const address = String(req.body.address || '').trim()
+  const mapsLink = String(req.body.mapsLink || '').trim()
+  const instructions = String(req.body.instructions || '').trim()
+  const roles = ['Robotics Engineer', 'Mechanical Engineer', 'Electronics Engineer', 'Technical Sales Engineer', 'UI Developer', 'Human Resources']
+  if (!Array.isArray(candidates) || !candidates.length || candidates.length > 100 || candidates.some(candidate => !candidate || !String(candidate.name || '').trim() || String(candidate.name).length > 120 || !/^\S+@\S+\.\S+$/.test(String(candidate.email || '').trim()) || String(candidate.email).length > 160) || !roles.includes(role) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time) || !['online', 'in-person'].includes(mode) || details.length > 2000 || meetingLink.length > 500 || address.length > 1000 || mapsLink.length > 500 || instructions.length > 5000 || (mode === 'online' && !/^https:\/\//i.test(meetingLink)) || (mode === 'in-person' && (!address || !/^https:\/\//i.test(mapsLink)))) {
+    return res.status(400).json({ error: 'Check the recipient list and complete the role, date, time, and interview details.' })
+  }
+  try {
+    const results = []
+    for (const candidate of candidates) {
+      try {
+        await sendInterviewRoundEmail({ ...candidate, role, date, time, mode, details, meetingLink, address, mapsLink, instructions })
+        results.push({ name: candidate.name, email: candidate.email, sent: true })
+      } catch (err) {
+        results.push({ name: candidate.name, email: candidate.email, sent: false, error: err.message || 'Unable to send email.' })
+      }
+    }
+    res.json({ results, sent: results.filter(result => result.sent).length, failed: results.filter(result => !result.sent).length })
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'Unable to send interview email.' })
+  }
+})
 
 function roleCapacityError(roleKey, scheduledCount, requestedCount = 1) {
   const remaining = Math.max(0, DAILY_INTERVIEW_LIMIT_PER_ROLE - scheduledCount)

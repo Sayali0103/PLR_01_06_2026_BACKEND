@@ -508,6 +508,35 @@ export async function sendInterviewAssignmentCancelledEmail(application, intervi
   })
 }
 
+export async function sendInterviewRoundEmail({ name, email, role, date, time, mode, details, meetingLink, address, mapsLink, instructions }) {
+  if (!process.env.RESEND_API_KEY) throw new Error('Email service is not configured (RESEND_API_KEY is missing).')
+  const cleanName = escapeHtml(name)
+  const cleanRole = escapeHtml(role)
+  const dateLabel = new Date(`${date}T00:00:00+05:30`).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full' })
+  const timeLabel = new Date(`2000-01-01T${time}:00+05:30`).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' })
+  const cleanMode = mode === 'online' ? 'Online' : 'Offline (In-person)'
+  const detailRows = [
+    ['Role', cleanRole], ['Date', escapeHtml(dateLabel)], ['Reporting Time', `${escapeHtml(timeLabel)} IST`], ['Mode', cleanMode],
+    ...(mode === 'online' ? [['Meeting Link', `<a href="${escapeHtml(meetingLink)}" style="color:${brand.orange};word-break:break-word;">Join online interview</a>`]] : [
+      ['Venue', `<a href="${escapeHtml(mapsLink)}" style="color:${brand.orange};word-break:break-word;">View Google Maps Location</a>`],
+      ['Office Address', escapeHtml(address).replace(/\n/g, '<br/>')],
+    ]),
+  ]
+  const instructionItems = (instructions || '').split('\n').map(item => item.trim()).filter(Boolean)
+  const instructionHtml = instructionItems.length ? `<h2 style="margin:28px 0 18px;color:${brand.ink};font-size:18px;">Important Information</h2><ul style="padding-left:24px;color:${brand.ink};font-size:14px;line-height:1.8;">${instructionItems.map(item => `<li style="margin-bottom:10px;">${escapeHtml(item)}</li>`).join('')}</ul>` : ''
+  const detailsHtml = details ? `<p style="margin:18px 0 0;color:${brand.ink};font-size:14px;line-height:1.7;">${escapeHtml(details).replace(/\n/g, '<br/>')}</p>` : ''
+  const subject = `Interview Schedule | ${role} - PL Robotics`
+  const plainRows = detailRows.map(([label, value]) => `${label}: ${String(value).replace(/<[^>]*>/g, '')}`).join('\n')
+  return sendEmail({
+    fromName: 'PL Robotics Careers',
+    to: email,
+    subject,
+    messageId: `<interview-round-${Date.now()}-${Math.random().toString(36).slice(2)}@plrobotics.in>`,
+    html: `<!doctype html><html><body style="margin:0;padding:0;background:#f4efe8;font-family:Arial,Helvetica,sans-serif;color:${brand.ink};"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4efe8;padding:28px 14px;"><tr><td align="center"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:660px;background:#fff;border:1px solid ${brand.line};border-radius:18px;overflow:hidden;"><tr><td style="background:${brand.bg};padding:28px 30px;border-bottom:1px solid ${brand.line};"><div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:${brand.orange};font-weight:800;margin-bottom:10px;">Interview Scheduled</div><h1 style="margin:0;font-size:26px;line-height:1.25;">P. L. Robotics ${mode === 'online' ? 'Online' : 'Offline'} Interview Round</h1></td></tr><tr><td style="padding:28px 30px;"><p style="color:${brand.muted};font-size:15px;">Dear ${cleanName},</p><p style="font-size:15px;line-height:1.8;">Congratulations on being shortlisted for an <strong>${mode === 'online' ? 'online' : 'offline'}</strong> interview for the <strong>${cleanRole}</strong> role.</p><p style="font-size:15px;line-height:1.8;">We are pleased to invite you to an interview and discussion. The details are as follows:</p><div style="padding:22px;background:#fffaf4;border:1px solid ${brand.line};border-radius:14px;"><h2 style="margin:0 0 18px;font-size:18px;">Interview Schedule</h2><table role="presentation" width="100%" cellspacing="0" cellpadding="0">${detailRows.map(([label, value]) => `<tr><td style="padding:10px 0;color:${brand.muted};font-size:14px;width:150px;border-bottom:1px solid ${brand.line};">${label}</td><td style="padding:10px 0;color:${brand.ink};font-size:14px;font-weight:600;line-height:1.6;border-bottom:1px solid ${brand.line};">${value}</td></tr>`).join('')}</table>${detailsHtml}</div>${instructionHtml}<p style="margin:28px 0 0;font-size:15px;line-height:1.8;">We look forward to meeting you.</p><p style="font-size:14px;">For any further assistance, please contact: <strong>9834596021</strong></p></td></tr><tr><td style="padding:20px 30px;background:#fffaf4;border-top:1px solid ${brand.line};color:${brand.muted};font-size:12px;">Regards,<br/><strong style="color:${brand.ink};">P. L. Robotics Talent Acquisition Team</strong></td></tr></table></td></tr></table></body></html>`,
+    text: [`Dear ${name},`, '', `Congratulations on being shortlisted for an ${mode === 'online' ? 'online' : 'offline'} interview for the ${role} role.`, '', 'INTERVIEW SCHEDULE', plainRows, '', mode === 'online' ? `Meeting Link: ${meetingLink}` : `Office Address: ${address}\nMaps: ${mapsLink}`, details, '', 'IMPORTANT INFORMATION', ...instructionItems.map(item => `• ${item}`), '', 'For any further assistance, please contact: 9834596021', '', 'We look forward to meeting you.', '', 'Regards,', 'P. L. Robotics Talent Acquisition Team'].filter(Boolean).join('\n'),
+  })
+}
+
 function inquiryRecipient() {
   return process.env.PLR_CONTACT_EMAIL || 'contact@plrobotics.com'
 }
