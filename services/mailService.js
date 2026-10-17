@@ -392,7 +392,7 @@ export async function sendInterviewAssignmentEmail(application, interviewer) {
   return sendEmail({
     fromName: senderName,
     to: interviewer.email,
-    replyTo: application.email,
+    replyTo: process.env.PLR_HR_EMAIL,
     subject: `INTERVIEW ASSIGNED | ${candidateName} — ${application.jobTitle}`,
     messageId: messageId(application, 'interview-assignment'),
     html: emailShell({
@@ -430,7 +430,7 @@ export async function sendInterviewAssignmentRescheduledEmail(application, inter
   return sendEmail({
     fromName: senderName,
     to: interviewer.email,
-    replyTo: application.email,
+    replyTo: process.env.PLR_HR_EMAIL,
     subject: `INTERVIEW REASSIGNED (RESCHEDULED) | ${candidateName} — ${application.jobTitle}`,
     messageId: messageId(application, 'interview-assignment-rescheduled'),
     html: emailShell({
@@ -494,7 +494,7 @@ export async function sendInterviewAssignmentCancelledEmail(application, intervi
   return sendEmail({
     fromName: senderName,
     to: interviewer.email,
-    replyTo: application.email,
+    replyTo: process.env.PLR_HR_EMAIL,
     subject: `INTERVIEW CANCELLED | ${candidateName} — ${application.jobTitle}`,
     messageId: messageId(application, 'interview-assignment-cancelled'),
     html: emailShell({
@@ -579,7 +579,7 @@ export function sendContactInquiryEmail(inquiry) {
     eyebrow: 'New contact enquiry',
     title: `${name} wants to contact PL Robotics`,
     intro: 'A new contact enquiry has been submitted through the PL Robotics website.',
-    replyTo: inquiry.email,
+    replyTo: process.env.PLR_HR_EMAIL,
     rows: [
       ['Name', name],
       ['Phone', inquiry.phone],
@@ -599,7 +599,7 @@ export function sendDemoRequestEmail(request) {
     eyebrow: 'New demo request',
     title: `${name} requested a PL Robotics demo`,
     intro: 'A new demo request has been submitted through the PL Robotics website.',
-    replyTo: request.companyEmail,
+    replyTo: process.env.PLR_HR_EMAIL,
     rows: [
       ['Name', name],
       ['Company', request.companyName],
