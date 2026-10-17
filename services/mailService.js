@@ -42,6 +42,10 @@ function fromAddress(name) {
   return `${name} <${fromEmail}>`
 }
 
+function hrReplyAddress() {
+  return process.env.PLR_REPLY_TO_EMAIL || 'hr@plrobotics.com'
+}
+
 async function sendEmail({ fromName, to, replyTo, subject, html, text, messageId: emailMessageId }) {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
@@ -258,7 +262,7 @@ export async function sendApplicationEmails(application) {
   await sendEmail({
     fromName: senderName,
     to: application.email,
-    replyTo: companyRecipient || undefined,
+    replyTo: hrReplyAddress(),
     subject: `APPLICATION RECEIVED | ${application.jobTitle} - ${name}`,
     messageId: messageId(application, 'career-receipt'),
     html: applicantEmailHtml(application),
@@ -305,7 +309,7 @@ export async function sendInterviewScheduledEmail(application) {
   return sendEmail({
     fromName: senderName,
     to: application.email,
-    replyTo: process.env.PLR_HR_EMAIL,
+    replyTo: hrReplyAddress(),
     subject: `INTERVIEW SCHEDULED | ${application.jobTitle} - PL Robotics`,
     messageId: messageId(application, 'interview-scheduled'),
     html: emailShell({
@@ -355,7 +359,7 @@ export async function sendInterviewRescheduledEmail(application) {
   return sendEmail({
     fromName: senderName,
     to: application.email,
-    replyTo: process.env.PLR_HR_EMAIL,
+    replyTo: hrReplyAddress(),
     subject: `INTERVIEW RESCHEDULED | ${application.jobTitle} - PL Robotics`,
     messageId: messageId(application, 'interview-rescheduled'),
     html: emailShell({
@@ -392,7 +396,7 @@ export async function sendInterviewAssignmentEmail(application, interviewer) {
   return sendEmail({
     fromName: senderName,
     to: interviewer.email,
-    replyTo: process.env.PLR_HR_EMAIL,
+    replyTo: hrReplyAddress(),
     subject: `INTERVIEW ASSIGNED | ${candidateName} — ${application.jobTitle}`,
     messageId: messageId(application, 'interview-assignment'),
     html: emailShell({
@@ -430,7 +434,7 @@ export async function sendInterviewAssignmentRescheduledEmail(application, inter
   return sendEmail({
     fromName: senderName,
     to: interviewer.email,
-    replyTo: process.env.PLR_HR_EMAIL,
+    replyTo: hrReplyAddress(),
     subject: `INTERVIEW REASSIGNED (RESCHEDULED) | ${candidateName} — ${application.jobTitle}`,
     messageId: messageId(application, 'interview-assignment-rescheduled'),
     html: emailShell({
@@ -461,7 +465,7 @@ export async function sendInterviewCancelledEmail(application) {
   return sendEmail({
     fromName: senderName,
     to: application.email,
-    replyTo: process.env.PLR_HR_EMAIL,
+    replyTo: hrReplyAddress(),
     subject: `INTERVIEW CANCELLED | ${application.jobTitle} - PL Robotics`,
     messageId: messageId(application, 'interview-cancelled'),
     html: emailShell({
@@ -494,7 +498,7 @@ export async function sendInterviewAssignmentCancelledEmail(application, intervi
   return sendEmail({
     fromName: senderName,
     to: interviewer.email,
-    replyTo: process.env.PLR_HR_EMAIL,
+    replyTo: hrReplyAddress(),
     subject: `INTERVIEW CANCELLED | ${candidateName} — ${application.jobTitle}`,
     messageId: messageId(application, 'interview-assignment-cancelled'),
     html: emailShell({
@@ -579,7 +583,7 @@ export function sendContactInquiryEmail(inquiry) {
     eyebrow: 'New contact enquiry',
     title: `${name} wants to contact PL Robotics`,
     intro: 'A new contact enquiry has been submitted through the PL Robotics website.',
-    replyTo: process.env.PLR_HR_EMAIL,
+    replyTo: hrReplyAddress(),
     rows: [
       ['Name', name],
       ['Phone', inquiry.phone],
@@ -599,7 +603,7 @@ export function sendDemoRequestEmail(request) {
     eyebrow: 'New demo request',
     title: `${name} requested a PL Robotics demo`,
     intro: 'A new demo request has been submitted through the PL Robotics website.',
-    replyTo: process.env.PLR_HR_EMAIL,
+    replyTo: hrReplyAddress(),
     rows: [
       ['Name', name],
       ['Company', request.companyName],
