@@ -62,7 +62,7 @@ async function sendEmail({ fromName, to, replyTo, subject, html, text, messageId
     body: JSON.stringify({
       from: fromAddress(fromName),
       to,
-      reply_to: replyTo,
+      reply_to: replyTo || hrReplyAddress(),
       subject,
       html,
       text,
