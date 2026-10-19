@@ -61,6 +61,16 @@ router.post('/', adminAuth, hrOnly, async (req, res) => {
   }
 })
 
+router.delete('/:id', adminAuth, hrOnly, async (req, res) => {
+  try {
+    const employee = await Employee.findByIdAndUpdate(req.params.id, { isActive: false }, { new: true })
+    if (!employee) return res.status(404).json({ error: 'Employee not found' })
+    res.json({ message: 'Employee removed' })
+  } catch {
+    res.status(400).json({ error: 'Failed to remove employee' })
+  }
+})
+
 router.get('/:id/admin-attendance', adminAuth, async (req, res) => {
   try {
     const attendance = await Attendance.find({ employeeId: req.params.id }).sort({ date: 1 })
