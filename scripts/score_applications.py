@@ -23,22 +23,25 @@ from sentence_transformers import SentenceTransformer, util
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 APPLICATION_TAB = "Applications"
 RAW_APPLICATION_HEADERS = [
-    "Date",
+    "Status",
+    "Timestamp",
     "First Name",
     "Middle Name",
     "Last Name",
     "Date of Birth",
-    "Phone",
+    "Mobile Number",
     "Email",
     "Current Location",
-    "Currently Employed?",
-    "Employer / Notice Period",
-    "Job Title",
-    "Application Type",
-    "Resume File",
-    "Project File",
-    "Status",
+    "Currently Doing Internship or Job?",
+    "Company Name and Notice Period",
+    "Role Applying For",
+    "Internship / Full Time",
+    "Resume Link",
+    "Previous Projects",
     "ATS Score",
+    "Online Interview Notes",
+    "Interview ATS Score",
+    "Offline Interview Notes",
 ]
 LEGACY_JOB_TITLES = {
     "ros developer engineer",
@@ -131,6 +134,7 @@ HEADER_ALIASES = {
     "Job Title": {
         "job title",
         "which role you are applying for?",
+        "role applying for",
     },
     "ATS Score": {
         "ats score",
@@ -191,7 +195,9 @@ def format_sheet_date(value):
 
 
 def resolve_header_map(headers):
-    normalized_headers = {normalized(header): index for index, header in enumerate(headers)}
+    normalized_headers = {}
+    for index, header in enumerate(headers):
+        normalized_headers.setdefault(normalized(header), index)
     resolved = {}
     for logical_name, aliases in HEADER_ALIASES.items():
         for alias in aliases:
@@ -203,6 +209,7 @@ def resolve_header_map(headers):
 
 def raw_application_row(application, title, score):
     return [
+        str(application.get("status") or "new").title(),
         format_sheet_date(application.get("createdAt")),
         application.get("firstName", ""),
         application.get("middleName", ""),
@@ -214,11 +221,13 @@ def raw_application_row(application, title, score):
         "Yes" if application.get("currentlyEmployed") else "No",
         application.get("employerDetails", ""),
         title,
-        "Intern" if application.get("applicantType") == "intern" else "Full-time Employee",
+        "Internship" if application.get("applicantType") == "intern" else "Full time",
         application.get("attachmentDriveLink") or application.get("attachmentFileName") or "",
         application.get("projectDriveLink") or application.get("projectFileName") or "",
-        str(application.get("status") or "new").title(),
         f"{score:.1f}/10",
+        "",
+        "",
+        "",
     ]
 
 
@@ -478,7 +487,7 @@ def ensure_sheet_headers(sheets, spreadsheet_id, dry_run):
             f"using a raw ATS section at row {header_row_number}."
         )
 
-    if "ATS Score" not in headers:
+    if not any(normalized(header) == "atsscore" for header in headers):
         headers.append("ATS Score")
         if not dry_run:
             sheets.spreadsheets().values().update(

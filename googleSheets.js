@@ -10,19 +10,29 @@ const APPLICATION_HEADERS = [
   'First Name',
   'Middle Name',
   'Last Name',
-  'Date:',
-  'Mobile number:',
-  'Email Id:-',
+  'Date of Birth',
+  'Mobile Number',
+  'Email',
   'Current Location',
+  'Currently Doing Internship or Job?',
+  'Company Name and Notice Period',
+  'Role Applying For',
+  'Internship / Full Time',
+  'Resume Link',
+  'Previous Projects',
+  'ATS Score',
+  'Online Interview Notes',
+  'Interview ATS Score',
+  'Offline Interview Notes',
+]
+
+const LEGACY_APPLICATION_HEADERS = [
+  'Status', 'Timestamp', 'First Name', 'Middle Name', 'Last Name', 'Date:',
+  'Mobile number:', 'Email Id:-', 'Current Location',
   'Are you currently doing internship or job anywhere?',
   'If Yes, mention the name of the company and the notice period.',
-  'Which role you are applying for?',
-  'Internship/Full time',
-  'Resume link',
-  'Previous projects',
-  'ATS SCORE',
-  'Note after online interview',
-  'ATS SCORE',
+  'Which role you are applying for?', 'Internship/Full time', 'Resume link',
+  'Previous projects', 'ATS SCORE', 'Note after online interview', 'ATS SCORE',
   'Note after offline interview',
 ]
 
@@ -89,8 +99,14 @@ async function ensureTabWithHeaders(sheets, tabName, headers) {
   const canSafelyExtendHeaders =
     existingHeaders.length < headers.length &&
     existingHeaders.every((header, index) => header === headers[index])
+  const isLegacyApplicationHeaderRow =
+    tabName === 'Applications' &&
+    existingHeaders.length === LEGACY_APPLICATION_HEADERS.length &&
+    existingHeaders.every((header, index) =>
+      normalizeHeader(header) === normalizeHeader(LEGACY_APPLICATION_HEADERS[index])
+    )
 
-  if (!existingHeaders.length || canSafelyExtendHeaders) {
+  if (!existingHeaders.length || canSafelyExtendHeaders || isLegacyApplicationHeaderRow) {
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `'${tabName}'!A1`,
@@ -146,14 +162,17 @@ function getApplicationCellValue(header, application, hasTimestampColumn, atsSco
     case 'currentlocation':
       return application.currentLocation || ''
     case 'currentlyemployed':
+    case 'currentlydoinginternshiporjob':
     case 'areyoucurrentlydoinginternshiporjobanywhere':
       return application.currentlyEmployed ? 'Yes' : 'No'
     case 'employernoticeperiod':
+    case 'companynameandnoticeperiod':
     case 'employerdetails':
     case 'ifyesmentionthenameofthecompanyandthenoticeperiod':
       return application.employerDetails || ''
     case 'jobtitle':
     case 'position':
+    case 'roleapplyingfor':
     case 'whichroleyouareapplyingfor':
       return application.jobTitle
     case 'applicationtype':
@@ -170,6 +189,7 @@ function getApplicationCellValue(header, application, hasTimestampColumn, atsSco
     case 'previousprojects':
       return application.projectDriveLink || application.projectFileName || ''
     case 'atsscore':
+    case 'interviewatsscore':
       if (columnIndex !== atsScoreColumnIndex || application.atsScore == null) return ''
       return `${application.atsScore.toFixed(1)}/10`
     default:
