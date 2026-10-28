@@ -5,22 +5,25 @@ dotenv.config()
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
 const APPLICATION_HEADERS = [
-  'Date',
+  'Status',
+  'Timestamp',
   'First Name',
   'Middle Name',
   'Last Name',
-  'Date of Birth',
-  'Phone',
-  'Email',
+  'Date:',
+  'Mobile number:',
+  'Email Id:-',
   'Current Location',
-  'Currently Employed?',
-  'Employer / Notice Period',
-  'Job Title',
-  'Application Type',
-  'Resume File',
-  'Project File',
-  'Status',
-  'ATS Score',
+  'Are you currently doing internship or job anywhere?',
+  'If Yes, mention the name of the company and the notice period.',
+  'Which role you are applying for?',
+  'Internship/Full time',
+  'Resume link',
+  'Previous projects',
+  'ATS SCORE',
+  'Note after online interview',
+  'ATS SCORE',
+  'Note after offline interview',
 ]
 
 const CONTACT_HEADERS = [
@@ -113,7 +116,7 @@ function normalizeHeader(header) {
   return String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
-function getApplicationCellValue(header, application, hasTimestampColumn) {
+function getApplicationCellValue(header, application, hasTimestampColumn, atsScoreColumnIndex, columnIndex) {
   switch (normalizeHeader(header)) {
     case 'status':
       return 'New'
@@ -143,24 +146,32 @@ function getApplicationCellValue(header, application, hasTimestampColumn) {
     case 'currentlocation':
       return application.currentLocation || ''
     case 'currentlyemployed':
+    case 'areyoucurrentlydoinginternshiporjobanywhere':
       return application.currentlyEmployed ? 'Yes' : 'No'
     case 'employernoticeperiod':
     case 'employerdetails':
+    case 'ifyesmentionthenameofthecompanyandthenoticeperiod':
       return application.employerDetails || ''
     case 'jobtitle':
     case 'position':
+    case 'whichroleyouareapplyingfor':
       return application.jobTitle
     case 'applicationtype':
     case 'applicanttype':
       return application.applicantType === 'intern' ? 'Intern' : 'Full-time Employee'
+    case 'internshipfulltime':
+      return application.applicantType === 'intern' ? 'Internship' : 'Full time'
     case 'resumefile':
     case 'resume':
+    case 'resumelink':
       return application.attachmentDriveLink || application.attachmentFileName || ''
     case 'projectfile':
     case 'project':
+    case 'previousprojects':
       return application.projectDriveLink || application.projectFileName || ''
     case 'atsscore':
-      return application.atsScore == null ? '' : `${application.atsScore.toFixed(1)}/10`
+      if (columnIndex !== atsScoreColumnIndex || application.atsScore == null) return ''
+      return `${application.atsScore.toFixed(1)}/10`
     default:
       return ''
   }
@@ -176,7 +187,10 @@ async function appendApplicationRow(application) {
   })
   const sheetHeaders = result.data.values?.[0] || APPLICATION_HEADERS
   const hasTimestampColumn = sheetHeaders.some(header => normalizeHeader(header) === 'timestamp')
-  const row = sheetHeaders.map(header => getApplicationCellValue(header, application, hasTimestampColumn))
+  const atsScoreColumnIndex = sheetHeaders.findIndex(header => normalizeHeader(header) === 'atsscore')
+  const row = sheetHeaders.map((header, columnIndex) =>
+    getApplicationCellValue(header, application, hasTimestampColumn, atsScoreColumnIndex, columnIndex)
+  )
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEET_ID,
