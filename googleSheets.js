@@ -109,6 +109,84 @@ async function appendRow(tabName, headers, row) {
   })
 }
 
+function normalizeHeader(header) {
+  return String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function getApplicationCellValue(header, application, hasTimestampColumn) {
+  switch (normalizeHeader(header)) {
+    case 'status':
+      return 'New'
+    case 'timestamp':
+    case 'createdat':
+    case 'datesubmitted':
+    case 'applicationdate':
+      return formatDate(application.createdAt)
+    case 'date':
+      return hasTimestampColumn ? application.dob : formatDate(application.createdAt)
+    case 'dateofbirth':
+    case 'dob':
+      return application.dob
+    case 'firstname':
+      return application.firstName
+    case 'middlename':
+      return application.middleName || ''
+    case 'lastname':
+      return application.lastName
+    case 'phone':
+    case 'mobile':
+    case 'mobilenumber':
+      return application.phone
+    case 'email':
+    case 'emailid':
+      return application.email
+    case 'currentlocation':
+      return application.currentLocation || ''
+    case 'currentlyemployed':
+      return application.currentlyEmployed ? 'Yes' : 'No'
+    case 'employernoticeperiod':
+    case 'employerdetails':
+      return application.employerDetails || ''
+    case 'jobtitle':
+    case 'position':
+      return application.jobTitle
+    case 'applicationtype':
+    case 'applicanttype':
+      return application.applicantType === 'intern' ? 'Intern' : 'Full-time Employee'
+    case 'resumefile':
+    case 'resume':
+      return application.attachmentDriveLink || application.attachmentFileName || ''
+    case 'projectfile':
+    case 'project':
+      return application.projectDriveLink || application.projectFileName || ''
+    case 'atsscore':
+      return application.atsScore == null ? '' : `${application.atsScore.toFixed(1)}/10`
+    default:
+      return ''
+  }
+}
+
+async function appendApplicationRow(application) {
+  const sheets = await getSheet()
+  await ensureTabWithHeaders(sheets, 'Applications', APPLICATION_HEADERS)
+
+  const result = await sheets.spreadsheets.values.get({
+    spreadsheetId: process.env.GOOGLE_SHEET_ID,
+    range: "'Applications'!A1:ZZ1",
+  })
+  const sheetHeaders = result.data.values?.[0] || APPLICATION_HEADERS
+  const hasTimestampColumn = sheetHeaders.some(header => normalizeHeader(header) === 'timestamp')
+  const row = sheetHeaders.map(header => getApplicationCellValue(header, application, hasTimestampColumn))
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: process.env.GOOGLE_SHEET_ID,
+    range: "'Applications'!A1",
+    valueInputOption: 'RAW',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: { values: [row] },
+  })
+}
+
 export async function ensureInquiryTabs() {
   const sheets = await getSheet()
   await ensureTabWithHeaders(sheets, 'Contact Enquiries', CONTACT_HEADERS)
@@ -122,24 +200,7 @@ export async function ensureApplicationTab() {
 
 export async function appendApplicationToSheet(application) {
   try {
-    await appendRow('Applications', APPLICATION_HEADERS, [
-      formatDate(application.createdAt),
-      application.firstName,
-      application.middleName || '',
-      application.lastName,
-      application.dob,
-      application.phone,
-      application.email,
-      application.currentLocation || '',
-      application.currentlyEmployed ? 'Yes' : 'No',
-      application.employerDetails || '',
-      application.jobTitle,
-      application.applicantType === 'intern' ? 'Intern' : 'Full-time Employee',
-      application.attachmentDriveLink || application.attachmentFileName || '',
-      application.projectDriveLink || application.projectFileName || '',
-      'New',
-      application.atsScore == null ? '' : `${application.atsScore.toFixed(1)}/10`,
-    ])
+    await appendApplicationRow(application)
     console.log(`Application sheet updated - ${application.firstName} ${application.lastName}`)
   } catch (err) {
     console.error('Google Sheets application append failed:', err.message)
