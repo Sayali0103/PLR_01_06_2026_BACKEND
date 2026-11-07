@@ -27,7 +27,7 @@ router.get('/all', adminAuth, async (req, res) => {
 // GET single job by id (public)
 router.get('/:id', async (req, res) => {
   try {
-    const job = await Job.findById(req.params.id)
+    const job = await Job.findOne({ _id: req.params.id, isActive: true })
     if (!job) return res.status(404).json({ error: 'Job not found' })
     res.json(job)
   } catch (err) {

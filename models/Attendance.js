@@ -4,7 +4,7 @@ const AttendanceSchema = new mongoose.Schema(
   {
     employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', required: true },
     date: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
-    status: { type: String, enum: ['present', 'absent'], required: true },
+    status: { type: String, enum: ['present', 'absent', 'holiday', 'half_day', 'wfh'], required: true },
   },
   { timestamps: true }
 )

@@ -3,20 +3,13 @@ import bcrypt from 'bcryptjs'
 import Employee from '../models/Employee.js'
 import Attendance from '../models/Attendance.js'
 import LeaveRequest from '../models/LeaveRequest.js'
+import SalarySlip from '../models/SalarySlip.js'
 import { adminAuth, createEmployeeToken, employeeAuth, employeeManager, hrOnly } from '../middleware/auth.js'
 import { submissionRateLimit } from '../middleware/submissionRateLimit.js'
+import { receiveSalarySlip } from '../middleware/salarySlipUpload.js'
 
 const router = express.Router()
 const START_DATE = '2026-09-01'
-const HOLIDAYS = new Set([
-  '2026-09-14', '2026-09-25', '2026-10-02', '2026-10-20',
-  '2026-11-08', '2026-11-11', '2026-12-25',
-])
-
-function isHoliday(date) {
-  const day = new Date(`${date}T00:00:00Z`).getUTCDay()
-  return day === 4 || HOLIDAYS.has(date)
-}
 
 function validDate(date) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return false
@@ -44,13 +37,69 @@ router.post('/login', submissionRateLimit, async (req, res) => {
 
 router.get('/me', employeeAuth, async (req, res) => {
   try {
-    const [attendance, leaveRequests] = await Promise.all([
+    const [attendance, leaveRequests, salarySlips] = await Promise.all([
       Attendance.find({ employeeId: req.employee._id }).sort({ date: 1 }),
       LeaveRequest.find({ employeeId: req.employee._id }).sort({ createdAt: -1 }),
+      SalarySlip.find({ employeeId: req.employee._id }).select('month originalName createdAt').sort({ month: -1 }),
     ])
-    res.json({ employee: req.employee, attendance, leaveRequests })
+    res.json({ employee: req.employee, attendance, leaveRequests, salarySlips })
   } catch {
     res.status(500).json({ error: 'Unable to load employee dashboard' })
+  }
+})
+
+router.get('/me/salary-slips/:id/file', employeeAuth, async (req, res) => {
+  try {
+    const slip = await SalarySlip.findOne({ _id: req.params.id, employeeId: req.employee._id }).select('+data')
+    if (!slip) return res.status(404).json({ error: 'Salary slip not found' })
+    res.set({ 'Content-Type': slip.contentType, 'Content-Disposition': `attachment; filename="${slip.month}-salary-slip.pdf"`, 'Cache-Control': 'private, no-store' })
+    res.send(slip.data)
+  } catch {
+    res.status(404).json({ error: 'Salary slip not found' })
+  }
+})
+
+router.post('/salary-slips', adminAuth, hrOnly, receiveSalarySlip, async (req, res) => {
+  const employeeId = String(req.body.employeeId || '')
+  const month = String(req.body.month || '')
+  if (!/^[a-f\d]{24}$/i.test(employeeId)) return res.status(400).json({ error: 'Select a valid employee' })
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ error: 'Select a valid month' })
+  const file = req.file
+  if (!file) return res.status(400).json({ error: 'Choose a salary slip PDF' })
+  if (file.mimetype !== 'application/pdf' || !file.buffer.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
+    return res.status(400).json({ error: 'Salary slips must be PDF files' })
+  }
+  try {
+    const employee = await Employee.findOne({ _id: employeeId, isActive: true })
+    if (!employee) return res.status(404).json({ error: 'Active employee not found' })
+    const slip = await SalarySlip.findOneAndUpdate(
+      { employeeId, month },
+      { employeeId, month, originalName: file.originalname.replace(/[\\/\r\n\0]/g, '_').slice(0, 200) || `${month}-salary-slip.pdf`, contentType: 'application/pdf', data: file.buffer },
+      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+    ).select('month originalName createdAt')
+    res.status(201).json(slip)
+  } catch {
+    res.status(400).json({ error: 'Unable to save salary slip' })
+  }
+})
+
+router.get('/:id/salary-slips', adminAuth, hrOnly, async (req, res) => {
+  try {
+    const slips = await SalarySlip.find({ employeeId: req.params.id }).select('month originalName createdAt').sort({ month: -1 })
+    res.json(slips)
+  } catch {
+    res.status(400).json({ error: 'Unable to load salary slips' })
+  }
+})
+
+router.get('/:id/salary-slips/:slipId/file', adminAuth, hrOnly, async (req, res) => {
+  try {
+    const slip = await SalarySlip.findOne({ _id: req.params.slipId, employeeId: req.params.id }).select('+data')
+    if (!slip) return res.status(404).json({ error: 'Salary slip not found' })
+    res.set({ 'Content-Type': slip.contentType, 'Content-Disposition': `attachment; filename="${slip.month}-salary-slip.pdf"`, 'Cache-Control': 'private, no-store' })
+    res.send(slip.data)
+  } catch {
+    res.status(404).json({ error: 'Salary slip not found' })
   }
 })
 
@@ -154,11 +203,11 @@ router.get('/:id/admin-attendance', adminAuth, async (req, res) => {
 router.put('/:id/attendance/:date', adminAuth, hrOnly, async (req, res) => {
   const { date } = req.params
   const { status } = req.body
-  if (!validDate(date) || date < START_DATE || isHoliday(date)) {
-    return res.status(400).json({ error: 'Attendance can only be marked on working days from 1 September 2026' })
+  if (!validDate(date) || date < START_DATE) {
+    return res.status(400).json({ error: 'Attendance can only be marked from 1 September 2026 onward' })
   }
-  if (!['present', 'absent'].includes(status)) {
-    return res.status(400).json({ error: 'Status must be present or absent' })
+  if (!['present', 'absent', 'holiday', 'half_day', 'wfh'].includes(status)) {
+    return res.status(400).json({ error: 'Choose present, absent, holiday, half day, or WFH' })
   }
   try {
     const employee = await Employee.findOne({ _id: req.params.id, isActive: true })
