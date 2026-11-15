@@ -52,8 +52,8 @@ export const adminOnly = (req, res, next) => {
   next()
 }
 
-export const hrOnly = (req, res, next) => {
-  if (req.adminRole !== 'hr') return res.status(403).json({ error: 'HR access required' })
+export const hrOrAdmin = (req, res, next) => {
+  if (!['hr', 'admin'].includes(req.adminRole)) return res.status(403).json({ error: 'Admin or HR access required' })
   next()
 }
 

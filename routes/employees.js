@@ -4,7 +4,8 @@ import Employee from '../models/Employee.js'
 import Attendance from '../models/Attendance.js'
 import LeaveRequest from '../models/LeaveRequest.js'
 import SalarySlip from '../models/SalarySlip.js'
-import { adminAuth, createEmployeeToken, employeeAuth, employeeManager, hrOnly } from '../middleware/auth.js'
+import WorkTask from '../models/WorkTask.js'
+import { adminAuth, createEmployeeToken, employeeAuth, employeeManager, hrOrAdmin } from '../middleware/auth.js'
 import { submissionRateLimit } from '../middleware/submissionRateLimit.js'
 import { receiveSalarySlip } from '../middleware/salarySlipUpload.js'
 
@@ -17,11 +18,24 @@ function validDate(date) {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date
 }
 
+function todayInIndia() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
 router.post('/login', submissionRateLimit, async (req, res) => {
   try {
     const name = String(req.body.name || '').trim()
     const password = String(req.body.password || '')
+    const workMode = String(req.body.workMode || 'office')
     if (!name || !password) return res.status(400).json({ error: 'Name and password are required' })
+    if (!['office', 'wfh'].includes(workMode)) return res.status(400).json({ error: 'Choose office or WFH' })
     const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const matches = await Employee.find({ name: new RegExp(`^${escapedName}$`, 'i'), isActive: true, portalEnabled: true }).select('+passwordHash')
     if (matches.length > 1) return res.status(400).json({ error: 'More than one employee has this name. Please contact HR.' })
@@ -29,6 +43,16 @@ router.post('/login', submissionRateLimit, async (req, res) => {
     if (!employee?.passwordHash || !(await bcrypt.compare(password, employee.passwordHash))) {
       return res.status(401).json({ error: 'Incorrect name or password' })
     }
+    const date = todayInIndia()
+    await Attendance.findOneAndUpdate(
+      { employeeId: employee._id, date },
+      {
+        $set: { workMode, status: workMode === 'wfh' ? 'wfh' : 'present', loginAt: new Date() },
+        $unset: { logoutAt: 1 },
+        $setOnInsert: { employeeId: employee._id, date },
+      },
+      { upsert: true, new: true, runValidators: true }
+    )
     res.json({ token: createEmployeeToken(employee._id), employee: { _id: employee._id, name: employee.name, email: employee.email } })
   } catch {
     res.status(500).json({ error: 'Unable to sign in' })
@@ -37,12 +61,13 @@ router.post('/login', submissionRateLimit, async (req, res) => {
 
 router.get('/me', employeeAuth, async (req, res) => {
   try {
-    const [attendance, leaveRequests, salarySlips] = await Promise.all([
+    const [attendance, leaveRequests, salarySlips, tasks] = await Promise.all([
       Attendance.find({ employeeId: req.employee._id }).sort({ date: 1 }),
       LeaveRequest.find({ employeeId: req.employee._id }).sort({ createdAt: -1 }),
       SalarySlip.find({ employeeId: req.employee._id }).select('month originalName createdAt').sort({ month: -1 }),
+      WorkTask.find({ employeeId: req.employee._id }).sort({ createdAt: -1 }),
     ])
-    res.json({ employee: req.employee, attendance, leaveRequests, salarySlips })
+    res.json({ employee: req.employee, attendance, leaveRequests, salarySlips, tasks })
   } catch {
     res.status(500).json({ error: 'Unable to load employee dashboard' })
   }
@@ -59,7 +84,107 @@ router.get('/me/salary-slips/:id/file', employeeAuth, async (req, res) => {
   }
 })
 
-router.post('/salary-slips', adminAuth, hrOnly, receiveSalarySlip, async (req, res) => {
+router.post('/me/logout', employeeAuth, async (req, res) => {
+  try {
+    const attendance = await Attendance.findOneAndUpdate(
+      { employeeId: req.employee._id, loginAt: { $exists: true }, logoutAt: { $exists: false } },
+      { $set: { logoutAt: new Date() } },
+      { new: true, sort: { date: -1 } }
+    )
+    res.json({ message: 'Signed out', attendance })
+  } catch {
+    res.status(500).json({ error: 'Unable to record sign out time' })
+  }
+})
+
+router.put('/me/tasks/:id', employeeAuth, async (req, res) => {
+  const { status } = req.body
+  const updateNote = String(req.body.updateNote || '').trim()
+  if (!['assigned', 'in_progress', 'completed'].includes(status)) {
+    return res.status(400).json({ error: 'Choose assigned, in progress, or completed' })
+  }
+  if (updateNote.length > 1000) return res.status(400).json({ error: 'Task updates must be 1000 characters or fewer' })
+  try {
+    const task = await WorkTask.findOneAndUpdate(
+      { _id: req.params.id, employeeId: req.employee._id },
+      { status, updateNote, employeeUpdatedAt: new Date() },
+      { new: true, runValidators: true }
+    )
+    if (!task) return res.status(404).json({ error: 'Task not found' })
+    res.json(task)
+  } catch {
+    res.status(400).json({ error: 'Unable to update task' })
+  }
+})
+
+router.get('/attendance-summary', adminAuth, async (req, res) => {
+  const month = String(req.query.month || '')
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ error: 'Select a valid month' })
+  try {
+    const startDate = `${month}-01`
+    const endDate = `${month}-${new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate().toString().padStart(2, '0')}`
+    const [employees, records, approvedLeaves] = await Promise.all([
+      Employee.find().select('name email isActive').sort({ name: 1 }),
+      Attendance.find({ date: { $gte: startDate, $lte: endDate } }).select('employeeId date status workMode loginAt logoutAt'),
+      LeaveRequest.find({ status: 'approved', startDate: { $lte: endDate }, endDate: { $gte: startDate } }).select('employeeId startDate endDate'),
+    ])
+    const summaries = employees.map(employee => {
+      const employeeRecords = records.filter(record => String(record.employeeId) === String(employee._id))
+      const employeeLeaves = approvedLeaves.filter(request => String(request.employeeId) === String(employee._id))
+      const leaveDays = new Set()
+      employeeLeaves.forEach(request => {
+        const from = request.startDate < startDate ? startDate : request.startDate
+        const through = request.endDate > endDate ? endDate : request.endDate
+        for (let date = from; date <= through; date = new Date(new Date(`${date}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10)) {
+          leaveDays.add(date)
+        }
+      })
+      const attendanceByDate = new Map(employeeRecords.map(record => [record.date, record]))
+      const leaveCount = [...leaveDays].filter(date => !attendanceByDate.has(date) || attendanceByDate.get(date).status === 'absent').length
+      return {
+        employee: { _id: employee._id, name: employee.name, email: employee.email, isActive: employee.isActive },
+        working: employeeRecords.reduce((total, record) => total + (record.status === 'half_day' ? 0.5 : ['present', 'wfh'].includes(record.status) ? 1 : 0), 0),
+        leave: leaveCount,
+        absent: employeeRecords.filter(record => record.status === 'absent' && !leaveDays.has(record.date)).length,
+        attendance: employeeRecords.sort((a, b) => a.date.localeCompare(b.date)),
+      }
+    })
+    res.json({ month, employees: summaries })
+  } catch {
+    res.status(500).json({ error: 'Unable to load monthly attendance summary' })
+  }
+})
+
+router.get('/tasks', adminAuth, async (_req, res) => {
+  try {
+    const tasks = await WorkTask.find().populate('employeeId', 'name email').sort({ createdAt: -1 })
+    res.json(tasks)
+  } catch {
+    res.status(500).json({ error: 'Unable to load employee tasks' })
+  }
+})
+
+router.post('/tasks', adminAuth, async (req, res) => {
+  const employeeId = String(req.body.employeeId || '')
+  const title = String(req.body.title || '').trim()
+  const description = String(req.body.description || '').trim()
+  const dueDate = String(req.body.dueDate || '')
+  if (!/^[a-f\d]{24}$/i.test(employeeId)) return res.status(400).json({ error: 'Select a valid employee' })
+  if (!title || title.length > 160) return res.status(400).json({ error: 'Enter a task title up to 160 characters' })
+  if (description.length > 2000) return res.status(400).json({ error: 'Task description must be 2000 characters or fewer' })
+  if (dueDate && !validDate(dueDate)) return res.status(400).json({ error: 'Enter a valid due date' })
+  try {
+    const employee = await Employee.findOne({ _id: employeeId, isActive: true })
+    if (!employee) return res.status(404).json({ error: 'Active employee not found' })
+    const task = await WorkTask.create({ employeeId, title, description, dueDate: dueDate || undefined })
+    await task.populate('employeeId', 'name email')
+    res.status(201).json(task)
+  } catch {
+    res.status(400).json({ error: 'Unable to assign task' })
+  }
+})
+
+router.post('/salary-slips', adminAuth, hrOrAdmin, receiveSalarySlip, async (req, res) => {
   const employeeId = String(req.body.employeeId || '')
   const month = String(req.body.month || '')
   if (!/^[a-f\d]{24}$/i.test(employeeId)) return res.status(400).json({ error: 'Select a valid employee' })
@@ -83,7 +208,7 @@ router.post('/salary-slips', adminAuth, hrOnly, receiveSalarySlip, async (req, r
   }
 })
 
-router.get('/:id/salary-slips', adminAuth, hrOnly, async (req, res) => {
+router.get('/:id/salary-slips', adminAuth, hrOrAdmin, async (req, res) => {
   try {
     const slips = await SalarySlip.find({ employeeId: req.params.id }).select('month originalName createdAt').sort({ month: -1 })
     res.json(slips)
@@ -92,7 +217,7 @@ router.get('/:id/salary-slips', adminAuth, hrOnly, async (req, res) => {
   }
 })
 
-router.get('/:id/salary-slips/:slipId/file', adminAuth, hrOnly, async (req, res) => {
+router.get('/:id/salary-slips/:slipId/file', adminAuth, hrOrAdmin, async (req, res) => {
   try {
     const slip = await SalarySlip.findOne({ _id: req.params.slipId, employeeId: req.params.id }).select('+data')
     if (!slip) return res.status(404).json({ error: 'Salary slip not found' })
@@ -138,7 +263,7 @@ router.get('/leave-requests', adminAuth, async (_req, res) => {
   }
 })
 
-router.put('/leave-requests/:id', adminAuth, hrOnly, async (req, res) => {
+router.put('/leave-requests/:id', adminAuth, hrOrAdmin, async (req, res) => {
   const { status } = req.body
   if (!['approved', 'rejected'].includes(status)) return res.status(400).json({ error: 'Status must be approved or rejected' })
   try {
@@ -200,7 +325,7 @@ router.get('/:id/admin-attendance', adminAuth, async (req, res) => {
   }
 })
 
-router.put('/:id/attendance/:date', adminAuth, hrOnly, async (req, res) => {
+router.put('/:id/attendance/:date', adminAuth, hrOrAdmin, async (req, res) => {
   const { date } = req.params
   const { status } = req.body
   if (!validDate(date) || date < START_DATE) {
@@ -223,7 +348,7 @@ router.put('/:id/attendance/:date', adminAuth, hrOnly, async (req, res) => {
   }
 })
 
-router.delete('/:id/attendance/:date', adminAuth, hrOnly, async (req, res) => {
+router.delete('/:id/attendance/:date', adminAuth, hrOrAdmin, async (req, res) => {
   try {
     await Attendance.deleteOne({ employeeId: req.params.id, date: req.params.date })
     res.json({ message: 'Attendance cleared' })
