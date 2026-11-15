@@ -18,7 +18,17 @@ const __dirname = path.dirname(__filename)
 
 const app = express()
 
-app.use(cors({ origin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173', credentials: true }))
+const frontendOrigins = new Set([
+  'http://localhost:5173',
+  'https://plrobotics.in',
+  'https://www.plrobotics.in',
+  ...(process.env.FRONTEND_ORIGIN || '').split(','),
+].map(origin => origin.trim()).filter(Boolean))
+
+app.use(cors({
+  origin: (origin, callback) => callback(null, !origin || frontendOrigins.has(origin)),
+  credentials: true,
+}))
 app.use(express.json({ limit: '100kb' }))
 
 // Serve uploaded files statically
@@ -39,7 +49,7 @@ mongoose
   .then(() => {
     console.log('✅ MongoDB connected')
     const port = Number(process.env.PORT || 5001)
-    const host = process.env.HOST || '127.0.0.1'
+    const host = process.env.HOST || '0.0.0.0'
     app.listen(port, host, () =>
       console.log(`🚀 Server running at http://${host}:${port}`)
     )

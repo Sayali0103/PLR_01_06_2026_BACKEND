@@ -20,3 +20,9 @@ include present and WFH days as working days, with half days counted as 0.5.
 
 Copy `.env.example` into `.env` and provide the shared interview link under
 `INTERVIEW_MEET_LINK`.
+
+For deployment, set `MONGO_URI`, `ADMIN_PASSWORD`, and `HR_PASSWORD` in the
+backend environment. Bind to `0.0.0.0` (the default) and set
+`FRONTEND_ORIGIN` to any additional frontend origins as a comma-separated
+list. The production site origins `https://plrobotics.in` and
+`https://www.plrobotics.in` are allowed by default.
