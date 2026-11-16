@@ -11,12 +11,20 @@ slot and sends a confirmation email.
 
 ## Employee dashboard
 
-Admin and HR accounts can review monthly working, approved leave, and absent
-counts for each employee; view employee login/logout timestamps and WFH days;
-manage attendance and leave; and assign tasks. Employees select their work
-location when signing in, can review assigned tasks, and can submit task
-status and progress updates for admin/HR review. Monthly attendance counts
-include present and WFH days as working days, with half days counted as 0.5.
+Admin and HR accounts can review monthly present, leave, and absent counts for
+active employees; view employee login/logout timestamps and hours worked;
+manage attendance and leave; upload private employee documents; and assign tasks.
+Past employees and interns are available in a separate dashboard tab with their
+historical attendance. Employees can download documents shared with their own
+account. Attendance can be marked as informed leave, and approved leave requests
+appear as informed leave on the employee calendar.
+Employees select their work location when signing in, can review assigned
+tasks, submit task status and progress updates, and change their password.
+Monthly present counts include WFH and count half days as 0.5.
+
+Admin and HR users can change their own dashboard passwords. Updated admin and
+HR password hashes are stored in MongoDB and take precedence over the initial
+`ADMIN_PASSWORD` and `HR_PASSWORD` environment values.
 
 Copy `.env.example` into `.env` and provide the shared interview link under
 `INTERVIEW_MEET_LINK`.

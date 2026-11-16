@@ -1,6 +1,8 @@
 import dotenv from 'dotenv'
+import bcrypt from 'bcryptjs'
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
 import Employee from '../models/Employee.js'
+import AdminCredential from '../models/AdminCredential.js'
 dotenv.config()
 
 const defaultEmployeeSecret = randomBytes(32).toString('hex')
@@ -33,18 +35,26 @@ export async function employeeAuth(req, res, next) {
   }
 }
 
-export const adminAuth = (req, res, next) => {
-  const password = req.headers['x-admin-password']
-  const role = req.headers['x-admin-role']
-  const passwords = {
-    admin: process.env.ADMIN_PASSWORD || 'admin123',
-    hr: process.env.HR_PASSWORD || 'hr123',
-  }
-  if (!password || !['admin', 'hr'].includes(role) || password !== passwords[role]) {
+export const adminAuth = async (req, res, next) => {
+  const password = String(req.headers['x-admin-password'] || '')
+  const role = String(req.headers['x-admin-role'] || '')
+  if (!password || !['admin', 'hr'].includes(role)) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
-  req.adminRole = role
-  next()
+  try {
+    const credential = await AdminCredential.findOne({ role }).select('+passwordHash')
+    const configuredPassword = role === 'admin'
+      ? process.env.ADMIN_PASSWORD || 'admin123'
+      : process.env.HR_PASSWORD || 'hr123'
+    const valid = credential
+      ? await bcrypt.compare(password, credential.passwordHash)
+      : password === configuredPassword
+    if (!valid) return res.status(401).json({ error: 'Unauthorized' })
+    req.adminRole = role
+    next()
+  } catch {
+    res.status(500).json({ error: 'Unable to verify admin credentials' })
+  }
 }
 
 export const adminOnly = (req, res, next) => {

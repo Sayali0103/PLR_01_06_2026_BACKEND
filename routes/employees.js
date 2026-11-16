@@ -1,12 +1,15 @@
 import express from 'express'
 import bcrypt from 'bcryptjs'
+import AdminCredential from '../models/AdminCredential.js'
 import Employee from '../models/Employee.js'
 import Attendance from '../models/Attendance.js'
+import EmployeeDocument from '../models/EmployeeDocument.js'
 import LeaveRequest from '../models/LeaveRequest.js'
 import SalarySlip from '../models/SalarySlip.js'
 import WorkTask from '../models/WorkTask.js'
 import { adminAuth, createEmployeeToken, employeeAuth, employeeManager, hrOrAdmin } from '../middleware/auth.js'
 import { submissionRateLimit } from '../middleware/submissionRateLimit.js'
+import { inspectEmployeeDocument, receiveEmployeeDocument } from '../middleware/employeeDocumentUpload.js'
 import { receiveSalarySlip } from '../middleware/salarySlipUpload.js'
 
 const router = express.Router()
@@ -27,6 +30,17 @@ function todayInIndia() {
   }).formatToParts(new Date())
   const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
   return `${values.year}-${values.month}-${values.day}`
+}
+
+function sendEmployeeDocument(res, document) {
+  const fallbackName = document.originalName.replace(/[^\x20-\x7E]|["\\;]/g, '_') || 'employee-document'
+  res.set({
+    'Content-Type': document.contentType,
+    'Content-Disposition': `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodeURIComponent(document.originalName)}`,
+    'Cache-Control': 'private, no-store',
+    'X-Content-Type-Options': 'nosniff',
+  })
+  res.send(document.data)
 }
 
 router.post('/login', submissionRateLimit, async (req, res) => {
@@ -61,15 +75,59 @@ router.post('/login', submissionRateLimit, async (req, res) => {
 
 router.get('/me', employeeAuth, async (req, res) => {
   try {
-    const [attendance, leaveRequests, salarySlips, tasks] = await Promise.all([
+    const [attendance, leaveRequests, salarySlips, tasks, documents] = await Promise.all([
       Attendance.find({ employeeId: req.employee._id }).sort({ date: 1 }),
       LeaveRequest.find({ employeeId: req.employee._id }).sort({ createdAt: -1 }),
       SalarySlip.find({ employeeId: req.employee._id }).select('month originalName createdAt').sort({ month: -1 }),
       WorkTask.find({ employeeId: req.employee._id }).sort({ createdAt: -1 }),
+      EmployeeDocument.find({ employeeId: req.employee._id }).select('originalName contentType size createdAt').sort({ createdAt: -1 }),
     ])
-    res.json({ employee: req.employee, attendance, leaveRequests, salarySlips, tasks })
+    const attendanceByDate = new Map(attendance.map(record => [record.date, record]))
+    leaveRequests.filter(request => request.status === 'approved').forEach(request => {
+      for (let date = request.startDate; date <= request.endDate; date = new Date(new Date(`${date}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10)) {
+        const existing = attendanceByDate.get(date)
+        if (!existing || existing.status === 'absent') {
+          attendanceByDate.set(date, { date, status: 'informed_leave' })
+        }
+      }
+    })
+    res.json({ employee: req.employee, attendance: [...attendanceByDate.values()].sort((a, b) => a.date.localeCompare(b.date)), leaveRequests, salarySlips, tasks, documents })
   } catch {
     res.status(500).json({ error: 'Unable to load employee dashboard' })
+  }
+})
+
+router.put('/me/password', employeeAuth, async (req, res) => {
+  const currentPassword = String(req.body.currentPassword || '')
+  const newPassword = String(req.body.newPassword || '')
+  if (!currentPassword || newPassword.length < 8) {
+    return res.status(400).json({ error: 'Enter your current password and a new password of at least 8 characters' })
+  }
+  try {
+    const employee = await Employee.findById(req.employee._id).select('+passwordHash')
+    if (!employee?.passwordHash || !(await bcrypt.compare(currentPassword, employee.passwordHash))) {
+      return res.status(401).json({ error: 'Current password is incorrect' })
+    }
+    employee.passwordHash = await bcrypt.hash(newPassword, 12)
+    await employee.save()
+    res.json({ message: 'Password changed successfully' })
+  } catch {
+    res.status(500).json({ error: 'Unable to change password' })
+  }
+})
+
+router.put('/admin-password', adminAuth, async (req, res) => {
+  const newPassword = String(req.body.newPassword || '')
+  if (newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' })
+  try {
+    await AdminCredential.findOneAndUpdate(
+      { role: req.adminRole },
+      { role: req.adminRole, passwordHash: await bcrypt.hash(newPassword, 12) },
+      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+    )
+    res.json({ message: 'Password changed successfully' })
+  } catch {
+    res.status(500).json({ error: 'Unable to change password' })
   }
 })
 
@@ -84,10 +142,20 @@ router.get('/me/salary-slips/:id/file', employeeAuth, async (req, res) => {
   }
 })
 
+router.get('/me/documents/:id/file', employeeAuth, async (req, res) => {
+  try {
+    const document = await EmployeeDocument.findOne({ _id: req.params.id, employeeId: req.employee._id }).select('+data')
+    if (!document) return res.status(404).json({ error: 'Document not found' })
+    sendEmployeeDocument(res, document)
+  } catch {
+    res.status(404).json({ error: 'Document not found' })
+  }
+})
+
 router.post('/me/logout', employeeAuth, async (req, res) => {
   try {
     const attendance = await Attendance.findOneAndUpdate(
-      { employeeId: req.employee._id, loginAt: { $exists: true }, logoutAt: { $exists: false } },
+      { employeeId: req.employee._id, date: todayInIndia(), loginAt: { $exists: true }, logoutAt: { $exists: false } },
       { $set: { logoutAt: new Date() } },
       { new: true, sort: { date: -1 } }
     )
@@ -123,15 +191,19 @@ router.get('/attendance-summary', adminAuth, async (req, res) => {
   try {
     const startDate = `${month}-01`
     const endDate = `${month}-${new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate().toString().padStart(2, '0')}`
-    const [employees, records, approvedLeaves] = await Promise.all([
-      Employee.find().select('name email isActive').sort({ name: 1 }),
+    const [employees, records, approvedLeaves, informedLeaveRecords] = await Promise.all([
+      Employee.find({ isActive: true }).select('name email isActive').sort({ name: 1 }),
       Attendance.find({ date: { $gte: startDate, $lte: endDate } }).select('employeeId date status workMode loginAt logoutAt'),
       LeaveRequest.find({ status: 'approved', startDate: { $lte: endDate }, endDate: { $gte: startDate } }).select('employeeId startDate endDate'),
+      Attendance.find({ date: { $gte: startDate, $lte: endDate }, status: 'informed_leave' }).select('employeeId date'),
     ])
     const summaries = employees.map(employee => {
       const employeeRecords = records.filter(record => String(record.employeeId) === String(employee._id))
       const employeeLeaves = approvedLeaves.filter(request => String(request.employeeId) === String(employee._id))
       const leaveDays = new Set()
+      informedLeaveRecords
+        .filter(record => String(record.employeeId) === String(employee._id))
+        .forEach(record => leaveDays.add(record.date))
       employeeLeaves.forEach(request => {
         const from = request.startDate < startDate ? startDate : request.startDate
         const through = request.endDate > endDate ? endDate : request.endDate
@@ -140,13 +212,28 @@ router.get('/attendance-summary', adminAuth, async (req, res) => {
         }
       })
       const attendanceByDate = new Map(employeeRecords.map(record => [record.date, record]))
-      const leaveCount = [...leaveDays].filter(date => !attendanceByDate.has(date) || attendanceByDate.get(date).status === 'absent').length
+      const leaveCount = [...leaveDays].filter(date => {
+        const record = attendanceByDate.get(date)
+        return !record || ['absent', 'informed_leave'].includes(record.status)
+      }).length
+      const now = Date.now()
+      const attendance = employeeRecords
+        .map(record => {
+          const endTime = record.logoutAt ? new Date(record.logoutAt).getTime() : record.date === todayInIndia() && record.loginAt ? now : null
+          const startTime = record.loginAt ? new Date(record.loginAt).getTime() : null
+          const minutesWorked = startTime !== null && endTime !== null && endTime >= startTime
+            ? Math.floor((endTime - startTime) / 60000)
+            : null
+          return { ...record.toObject(), minutesWorked }
+        })
+        .sort((a, b) => a.date.localeCompare(b.date))
       return {
         employee: { _id: employee._id, name: employee.name, email: employee.email, isActive: employee.isActive },
-        working: employeeRecords.reduce((total, record) => total + (record.status === 'half_day' ? 0.5 : ['present', 'wfh'].includes(record.status) ? 1 : 0), 0),
+        present: employeeRecords.reduce((total, record) => total + (record.status === 'half_day' ? 0.5 : ['present', 'wfh'].includes(record.status) ? 1 : 0), 0),
         leave: leaveCount,
         absent: employeeRecords.filter(record => record.status === 'absent' && !leaveDays.has(record.date)).length,
-        attendance: employeeRecords.sort((a, b) => a.date.localeCompare(b.date)),
+        totalMinutesWorked: attendance.reduce((total, record) => total + (record.minutesWorked || 0), 0),
+        attendance,
       }
     })
     res.json({ month, employees: summaries })
@@ -205,6 +292,57 @@ router.post('/salary-slips', adminAuth, hrOrAdmin, receiveSalarySlip, async (req
     res.status(201).json(slip)
   } catch {
     res.status(400).json({ error: 'Unable to save salary slip' })
+  }
+})
+
+router.post('/documents', adminAuth, hrOrAdmin, receiveEmployeeDocument, async (req, res) => {
+  const employeeId = String(req.body.employeeId || '')
+  if (!/^[a-f\d]{24}$/i.test(employeeId)) return res.status(400).json({ error: 'Select a valid employee' })
+  const file = req.file
+  if (!file) return res.status(400).json({ error: 'Choose a document to upload' })
+  const contentType = inspectEmployeeDocument(file)
+  if (!contentType) return res.status(400).json({ error: 'Choose a valid PDF, Office document, JPG, JPEG, or PNG file' })
+  try {
+    const employee = await Employee.findOne({ _id: employeeId, isActive: true })
+    if (!employee) return res.status(404).json({ error: 'Active employee not found' })
+    const document = await EmployeeDocument.create({
+      employeeId,
+      originalName: file.originalname.replace(/[\\/\r\n\0]/g, '_').slice(0, 200) || 'employee-document',
+      contentType,
+      size: file.size,
+      uploadedByRole: req.adminRole,
+      data: file.buffer,
+    })
+    res.status(201).json({
+      _id: document._id,
+      originalName: document.originalName,
+      contentType: document.contentType,
+      size: document.size,
+      createdAt: document.createdAt,
+    })
+  } catch {
+    res.status(400).json({ error: 'Unable to save employee document' })
+  }
+})
+
+router.get('/:id/documents', adminAuth, hrOrAdmin, async (req, res) => {
+  try {
+    const employee = await Employee.findOne({ _id: req.params.id, isActive: true }).select('_id')
+    if (!employee) return res.status(404).json({ error: 'Active employee not found' })
+    const documents = await EmployeeDocument.find({ employeeId: employee._id }).select('originalName contentType size createdAt').sort({ createdAt: -1 })
+    res.json(documents)
+  } catch {
+    res.status(400).json({ error: 'Unable to load employee documents' })
+  }
+})
+
+router.get('/:id/documents/:documentId/file', adminAuth, hrOrAdmin, async (req, res) => {
+  try {
+    const document = await EmployeeDocument.findOne({ _id: req.params.documentId, employeeId: req.params.id }).select('+data')
+    if (!document) return res.status(404).json({ error: 'Document not found' })
+    sendEmployeeDocument(res, document)
+  } catch {
+    res.status(404).json({ error: 'Document not found' })
   }
 })
 
@@ -331,8 +469,8 @@ router.put('/:id/attendance/:date', adminAuth, hrOrAdmin, async (req, res) => {
   if (!validDate(date) || date < START_DATE) {
     return res.status(400).json({ error: 'Attendance can only be marked from 1 September 2026 onward' })
   }
-  if (!['present', 'absent', 'holiday', 'half_day', 'wfh'].includes(status)) {
-    return res.status(400).json({ error: 'Choose present, absent, holiday, half day, or WFH' })
+  if (!['present', 'absent', 'informed_leave', 'holiday', 'half_day', 'wfh'].includes(status)) {
+    return res.status(400).json({ error: 'Choose present, absent, informed leave, holiday, half day, or WFH' })
   }
   try {
     const employee = await Employee.findOne({ _id: req.params.id, isActive: true })
