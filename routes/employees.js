@@ -346,6 +346,16 @@ router.get('/:id/documents/:documentId/file', adminAuth, hrOrAdmin, async (req, 
   }
 })
 
+router.delete('/:id/documents/:documentId', adminAuth, hrOrAdmin, async (req, res) => {
+  try {
+    const document = await EmployeeDocument.findOneAndDelete({ _id: req.params.documentId, employeeId: req.params.id })
+    if (!document) return res.status(404).json({ error: 'Document not found' })
+    res.json({ message: 'Employee document deleted' })
+  } catch {
+    res.status(400).json({ error: 'Unable to delete employee document' })
+  }
+})
+
 router.get('/:id/salary-slips', adminAuth, hrOrAdmin, async (req, res) => {
   try {
     const slips = await SalarySlip.find({ employeeId: req.params.id }).select('month originalName createdAt').sort({ month: -1 })
